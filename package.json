@@ -1,0 +1,26 @@
+{
+  "name": "passkey-playground",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Passkey (WebAuthn) demo app with Playwright CDP testing",
+  "workspaces": [
+    "server",
+    "client",
+    "e2e"
+  ],
+  "scripts": {
+    "dev:server": "npm run dev -w server",
+    "dev:client": "npm run dev -w client",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "db:generate": "npm run db:generate -w server",
+    "db:migrate": "npm run db:migrate -w server",
+    "test": "npm run test -w e2e",
+    "test:ui": "npm run test:ui -w e2e",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.7.3"
+  }
+}
