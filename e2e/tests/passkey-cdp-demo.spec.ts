@@ -40,7 +40,8 @@ import { test as base, expect, type CDPSession } from '@playwright/test';
 //
 //  Important: CDP sessions are Chromium-only. Firefox and WebKit
 //  do NOT support CDP, so WebAuthn testing this way only works
-//  with Chromium-based browsers.
+//  with Chromium-based browsers. For other browsers, see
+//  passkey-credentials-demo.spec.ts.
 //
 
 base.describe('CDP WebAuthn Demo', () => {
@@ -315,8 +316,16 @@ base.describe('CDP WebAuthn Demo', () => {
   //  STEP 5: Simulating User Verification Failure
   // =====================================================================
   //
-  //  By setting isUserVerified: false, you can test how your app
-  //  handles the case where biometric verification fails.
+  //  With isUserVerified: false the authenticator offers user verification
+  //  but it fails, as when a biometric check does not match.
+  //
+  //  The ceremony then ends in a NotAllowedError in the browser. The server
+  //  never gets a response to verify, even though it only asks for
+  //  userVerification: 'preferred'. The page cannot tell a failed check from
+  //  a user cancelling, so the app shows its cancellation message.
+  //
+  //  context.credentials cannot reproduce this: its user verification always
+  //  succeeds (see passkey-credentials-demo.spec.ts).
   //
 
   base('Step 5: User verification failure scenario', async ({ page }) => {
@@ -339,20 +348,21 @@ base.describe('CDP WebAuthn Demo', () => {
     );
 
     await page.goto('/#/register');
-    await page.fill('#username', 'uv-fail-test');
+    await page.fill('#username', `uv-fail-${Date.now()}`);
     await page.click('#register-btn');
 
-    // The registration should fail or the server should reject it,
-    // depending on whether userVerification is 'required' or 'preferred'.
-    // With 'preferred', the ceremony may succeed but with UV=false.
-    // With 'required', it will fail.
+    // The message marks the end of the ceremony, so check it first. A success
+    // would redirect shortly afterwards, which the URL check then rules out.
+    await expect(page.locator('#message')).toHaveText(
+      'Passkey creation was cancelled.',
+    );
+    await expect(page).toHaveURL(/#\/register$/);
 
-    // Wait briefly for the response
-    await page.waitForTimeout(2000);
-
-    // Check if we're still on the register page (failure) or redirected
-    const url = page.url();
-    console.log('URL after UV failure attempt:', url);
+    // The failed ceremony left nothing on the authenticator
+    const { credentials } = await cdpSession.send('WebAuthn.getCredentials', {
+      authenticatorId,
+    });
+    expect(credentials).toHaveLength(0);
 
     // Cleanup
     await cdpSession.send('WebAuthn.removeVirtualAuthenticator', {

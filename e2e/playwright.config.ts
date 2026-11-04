@@ -19,12 +19,19 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
-        // CDP is Chromium-only — WebAuthn virtual authenticators
-        // require the Chrome DevTools Protocol
       },
     },
-    // WebAuthn CDP is NOT available in Firefox or WebKit.
-    // This is intentional — the project demonstrates Chromium CDP testing.
+    // Every other spec uses CDP, which is Chromium-only. context.credentials
+    // needs no CDP, so its demo can also run in other browsers.
+    {
+      name: 'webkit',
+      testMatch: /passkey-credentials-demo\.spec\.ts$/,
+      use: {
+        ...devices['Desktop Safari'],
+      },
+    },
+    // No Firefox project yet: it has not been possible to run it here.
+    // See "Important Notes" in the README.
   ],
 
   // Start both server and client before tests

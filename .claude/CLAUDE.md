@@ -15,7 +15,7 @@ npm run db:migrate
 # Start both server (port 3000) and client (port 5173)
 npm run dev
 
-# Run all Playwright tests (Chromium only, sequential)
+# Run all Playwright tests (sequential; the context.credentials demo also runs in WebKit)
 npm test
 
 # Run tests with Playwright UI mode
@@ -46,11 +46,11 @@ This is an npm workspaces monorepo with three packages: `server`, `client`, and 
 - WebAuthn browser-side ceremony via `@simplewebauthn/browser`
 - No framework — direct DOM manipulation in view files
 
-**E2E** (`e2e/`) — Playwright tests using CDP virtual authenticators
+**E2E** (`e2e/`) — Playwright tests using CDP virtual authenticators and `context.credentials`
 - `fixtures/webauthn.fixture.ts` provides a `createVirtualAuthenticator()` helper that sets up a CDP session with `WebAuthn.enable` and returns methods for credential inspection
-- Tests are Chromium-only and run with `workers: 1` (WebAuthn state is per browser context)
+- Tests run with `workers: 1` (WebAuthn state is per browser context). CDP specs are Chromium-only; `passkey-credentials-demo.spec.ts` also runs in WebKit
 - Playwright config auto-starts both server and client via `webServer`
-- `passkey-cdp-demo.spec.ts` is a commented learning guide, not just a test file
+- `passkey-cdp-demo.spec.ts` and `passkey-credentials-demo.spec.ts` are commented learning guides, not just test files
 
 ## Environment
 
