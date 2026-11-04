@@ -185,7 +185,7 @@ base.describe('CDP WebAuthn Demo', () => {
     //  3a. Register a passkey
     // ───────────────────────────────────────────────────────────────
     await page.goto('/#/register');
-    await page.fill('#username', 'demo-user');
+    await page.fill('#username', `demo-user-${Date.now()}`);
     await page.click('#register-btn');
     await page.waitForURL('**/dashboard');
 

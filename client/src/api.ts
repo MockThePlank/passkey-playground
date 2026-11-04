@@ -1,3 +1,8 @@
+import type {
+  PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON,
+} from '@simplewebauthn/browser';
+
 const BASE = '/api/auth';
 
 async function request<T>(

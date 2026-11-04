@@ -5,14 +5,16 @@ test.describe('Passkey Login', () => {
     page,
     authenticator,
   }) => {
+    const username = `logintest-${Date.now()}`;
+
     // ─── Step 1: Register a user first ──────────────────────────────
     await page.goto('/#/register');
-    await page.fill('#username', 'logintest');
+    await page.fill('#username', username);
     await page.click('#register-btn');
     await page.waitForURL('**/dashboard');
 
     // Verify registration worked
-    await expect(page.locator('.user-badge')).toContainText('logintest');
+    await expect(page.locator('.user-badge')).toContainText(username);
 
     // ─── Step 2: Logout ─────────────────────────────────────────────
     await page.click('#logout-btn');
@@ -28,7 +30,7 @@ test.describe('Passkey Login', () => {
     await page.waitForURL('**/dashboard');
 
     // Verify login worked
-    await expect(page.locator('.user-badge')).toContainText('logintest');
+    await expect(page.locator('.user-badge')).toContainText(username);
   });
 
   test('should fail login without registered credential', async ({

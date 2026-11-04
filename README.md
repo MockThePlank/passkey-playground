@@ -24,7 +24,7 @@ A minimal demo app that shows how to **test WebAuthn/Passkey flows with Playwrig
 
 ### Prerequisites
 
-- Node.js ≥ 20
+- Node.js ≥ 22
 - Docker & Docker Compose
 
 ### Setup
@@ -35,14 +35,16 @@ git clone <repo-url>
 cd passkey-playground
 npm install
 
-# 2. Start PostgreSQL
+# 2. Create the server config (the defaults match Docker Compose)
+cp .env.example .env
+
+# 3. Start PostgreSQL
 npm run db:up
 
-# 3. Generate and run migrations
-npm run db:generate
+# 4. Run migrations
 npm run db:migrate
 
-# 4. Start dev servers (backend + frontend)
+# 5. Start dev servers (backend + frontend)
 npm run dev
 ```
 

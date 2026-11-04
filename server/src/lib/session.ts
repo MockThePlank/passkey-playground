@@ -7,6 +7,8 @@ declare module '@fastify/secure-session' {
     username: string;
     // Challenge storage for WebAuthn ceremonies
     challenge: string;
+    // Username requested by a registration that has not been verified yet
+    pendingUsername: string;
   }
 }
 

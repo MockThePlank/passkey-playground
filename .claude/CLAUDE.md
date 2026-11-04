@@ -54,4 +54,4 @@ This is an npm workspaces monorepo with three packages: `server`, `client`, and 
 
 ## Environment
 
-Copy `.env.example` to `server/.env`. Default values work with the Docker Compose PostgreSQL setup (user: `passkey`, password: `passkey`, db: `passkey_playground`).
+Copy `.env.example` to `.env` in the repository root. Default values work with the Docker Compose PostgreSQL setup (user: `passkey`, password: `passkey`, db: `passkey_playground`).

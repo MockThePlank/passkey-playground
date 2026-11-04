@@ -18,16 +18,23 @@ import { requireAuth } from '../lib/session.js';
 const rpID = process.env.RP_ID || 'localhost';
 const rpName = process.env.RP_NAME || 'Passkey Playground';
 const rpOrigin = process.env.RP_ORIGIN || 'http://localhost:5173';
+const MAX_USERNAME_LENGTH = 255; // Matches users.username in the schema
+const USERNAME_TAKEN = 'Username is already taken';
 
 export async function authRoutes(fastify: FastifyInstance) {
   // ─── Registration: Generate Options ──────────────────────────────
-  fastify.post<{ Body: { username: string } }>(
+  fastify.post<{ Body?: { username?: unknown } }>(
     '/register/options',
     async (request, reply) => {
-      const { username } = request.body;
+      const rawUsername = request.body?.username;
+      const username = typeof rawUsername === 'string' ? rawUsername.trim() : '';
 
-      if (!username || username.trim().length === 0) {
+      if (username.length === 0) {
         return reply.code(400).send({ error: 'Username is required' });
+      }
+
+      if (username.length > MAX_USERNAME_LENGTH) {
+        return reply.code(400).send({ error: 'Username is too long' });
       }
 
       // Check if user already exists
@@ -40,6 +47,13 @@ export async function authRoutes(fastify: FastifyInstance) {
         [];
 
       if (existingUser) {
+        // Only the signed-in owner may add a passkey to an existing account.
+        // Anyone else would otherwise take the account over by registering
+        // their own passkey under this username.
+        if (request.session.get('userId') !== existingUser.id) {
+          return reply.code(409).send({ error: USERNAME_TAKEN });
+        }
+
         const creds = await db.query.credentials.findMany({
           where: eq(credentials.userId, existingUser.id),
         });
@@ -66,7 +80,8 @@ export async function authRoutes(fastify: FastifyInstance) {
 
       // Store challenge in session for verification
       request.session.set('challenge', options.challenge);
-      request.session.set('username', username);
+      // Kept apart from `username`, which names the signed-in user
+      request.session.set('pendingUsername', username);
 
       return reply.send(options);
     },
@@ -77,7 +92,7 @@ export async function authRoutes(fastify: FastifyInstance) {
     '/register/verify',
     async (request, reply) => {
       const expectedChallenge = request.session.get('challenge');
-      const username = request.session.get('username');
+      const username = request.session.get('pendingUsername');
 
       if (!expectedChallenge || !username) {
         return reply.code(400).send({ error: 'No pending registration' });
@@ -108,6 +123,10 @@ export async function authRoutes(fastify: FastifyInstance) {
             .values({ username })
             .returning();
           user = newUser;
+        } else if (request.session.get('userId') !== user.id) {
+          // Re-checked here: the name may have been claimed since the options
+          // were issued, or the session may be an older copy of the cookie
+          return reply.code(409).send({ error: USERNAME_TAKEN });
         }
 
         // Store credential
@@ -122,6 +141,7 @@ export async function authRoutes(fastify: FastifyInstance) {
         // Set session
         request.session.set('userId', user.id);
         request.session.set('username', username);
+        request.session.set('pendingUsername', undefined);
         request.session.set('challenge', undefined);
 
         return reply.send({ verified: true, username });
@@ -172,7 +192,7 @@ export async function authRoutes(fastify: FastifyInstance) {
           expectedRPID: rpID,
           credential: {
             id: credential.id,
-            publicKey: credential.publicKey,
+            publicKey: new Uint8Array(credential.publicKey),
             counter: credential.counter,
             transports:
               (credential.transports as AuthenticatorTransport[]) ?? [],
