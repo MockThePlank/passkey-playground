@@ -8,7 +8,7 @@ A minimal demo app that shows how to **test WebAuthn/Passkey flows with Playwrig
 - Testing passkey flows in Playwright **without real hardware**
 - Using CDP sessions to create virtual authenticators
 - Inspecting credentials, sign counts, and authenticator state via CDP
-- Handling different authenticator configurations (platform, USB, UV failure)
+- Configuring virtual authenticators (platform and USB) and simulating failed user verification
 - Using `context.credentials` to register, seed and reuse passkeys without CDP
 
 ## Tech Stack
@@ -32,7 +32,7 @@ A minimal demo app that shows how to **test WebAuthn/Passkey flows with Playwrig
 
 ```bash
 # 1. Clone and install
-git clone <repo-url>
+git clone https://github.com/MockThePlank/passkey-playground.git
 cd passkey-playground
 npm install
 
@@ -73,9 +73,10 @@ npm run test:headed -w e2e
 passkey-playground/
 ├── server/           # Fastify backend with WebAuthn endpoints
 │   └── src/
+│       ├── index.ts          # Server setup, including the session cookie
 │       ├── routes/auth.ts    # Register + Login WebAuthn endpoints
 │       ├── db/schema.ts      # Users + Credentials tables
-│       └── lib/session.ts    # Cookie session management
+│       └── lib/session.ts    # Session data types and auth guard
 │
 ├── client/           # Vanilla TypeScript frontend
 │   └── src/
@@ -165,10 +166,11 @@ The [`Credentials` docs](https://playwright.dev/docs/api/class-credentials) say 
 | `WebAuthn.removeCredential` | Remove a specific credential |
 | `WebAuthn.clearCredentials` | Wipe all credentials |
 | `WebAuthn.setUserVerified` | Toggle user verification at runtime |
+| `WebAuthn.setAutomaticPresenceSimulation` | Toggle automatic user presence |
 
 ## Important Notes
 
 - **Chromium only applies to CDP**: CDP WebAuthn is not available in Firefox or WebKit, so those specs run in Chromium only. `context.credentials` has no such limit.
 - **Firefox is not part of the test run**: Playwright's Firefox 157 build exits during startup on the macOS 27 machine this was developed on, with `Could not find profile folder`. It also happens when starting the binary directly, without Playwright. The cause is unknown, so whether the demo passes in Firefox is untested.
 - **localhost**: WebAuthn requires a secure context. `localhost` is treated as secure.
-- Tests run sequentially (`workers: 1`) because WebAuthn state is per-browser-context
+- Tests run sequentially (`workers: 1`, set in `e2e/playwright.config.ts`)

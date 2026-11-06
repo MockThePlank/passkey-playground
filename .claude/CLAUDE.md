@@ -8,9 +8,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Start PostgreSQL (Docker required)
 npm run db:up
 
-# Generate and run Drizzle migrations
-npm run db:generate
+# Run Drizzle migrations (committed in server/drizzle)
 npm run db:migrate
+
+# Only after changing server/src/db/schema.ts: generate a new migration
+npm run db:generate
 
 # Start both server (port 3000) and client (port 5173)
 npm run dev
