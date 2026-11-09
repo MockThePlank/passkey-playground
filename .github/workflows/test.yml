@@ -42,7 +42,9 @@ jobs:
 
       - run: npm run db:migrate
 
-      - run: npx playwright install --with-deps chromium webkit
+      # Chromium only: the WebKit project does not run on Linux, see
+      # e2e/playwright.config.ts
+      - run: npx playwright install --with-deps chromium
         working-directory: e2e
 
       - run: npm test

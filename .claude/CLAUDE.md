@@ -57,7 +57,7 @@ This is an npm workspaces monorepo with three packages: `server`, `client`, and 
 - `fixtures/webauthn.fixture.ts` provides the `authenticator` fixture (configurable with `test.use({ authenticatorOptions })`) and a `createVirtualAuthenticator()` helper that sets up a CDP session with `WebAuthn.enable` and returns methods for credential inspection
 - `fixtures/app.ts` holds the helpers that operate the app (`registerViaUi`, `loginViaUi`, `logout`, `message`). Use them, and role/label locators, instead of ids or CSS classes
 - `global-setup.ts` deletes the users a run created; it needs `DATABASE_URL` (read from the root `.env`)
-- Tests run with `workers: 1` (WebAuthn state is per browser context). CDP specs are Chromium-only; `passkey-credentials-demo.spec.ts` also runs in WebKit
+- Tests run with `workers: 1` (WebAuthn state is per browser context). CDP specs are Chromium-only; `passkey-credentials-demo.spec.ts` also runs in WebKit, except on Linux (and so not in CI), where Playwright's WebKit has no `window.PublicKeyCredential`
 - Playwright config auto-starts both server and client via `webServer`
 - `passkey-cdp-demo.spec.ts` and `passkey-credentials-demo.spec.ts` are commented learning guides, not just test files
 

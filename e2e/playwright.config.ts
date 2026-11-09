@@ -1,5 +1,12 @@
 import { defineConfig, devices } from '@playwright/test';
 
+// Playwright's WebKit build for Linux has no window.PublicKeyCredential.
+// context.credentials still replaces navigator.credentials there, but the
+// app's WebAuthn library checks for that global first and stops with
+// "WebAuthn is not supported in this browser". So the WebKit project only
+// runs where the browser has WebAuthn: macOS and Windows.
+const webkitHasWebAuthn = process.platform !== 'linux';
+
 export default defineConfig({
   testDir: './tests',
   // Deletes the users a run creates; see the file for details
@@ -25,13 +32,17 @@ export default defineConfig({
     },
     // Every other spec uses CDP, which is Chromium-only. context.credentials
     // needs no CDP, so its demo can also run in other browsers.
-    {
-      name: 'webkit',
-      testMatch: /passkey-credentials-demo\.spec\.ts$/,
-      use: {
-        ...devices['Desktop Safari'],
-      },
-    },
+    ...(webkitHasWebAuthn
+      ? [
+          {
+            name: 'webkit',
+            testMatch: /passkey-credentials-demo\.spec\.ts$/,
+            use: {
+              ...devices['Desktop Safari'],
+            },
+          },
+        ]
+      : []),
     // No Firefox project yet: it has not been possible to run it here.
     // See "Important Notes" in the README.
   ],

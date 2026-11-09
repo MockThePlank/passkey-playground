@@ -76,7 +76,7 @@ npm run typecheck
 
 The tests need the database from `npm run db:up`. Each run deletes the users it created (see `e2e/global-setup.ts`); accounts from before the run are left alone.
 
-The same steps run on GitHub Actions for every push and pull request (`.github/workflows/test.yml`).
+The same steps run on GitHub Actions for every push and pull request (`.github/workflows/test.yml`), in Chromium only: see the WebKit note under "Important Notes".
 
 ## Project Structure
 
@@ -136,7 +136,7 @@ The counterpart to the CDP demo, using Playwright's built-in API:
 
 | | CDP (`WebAuthn.*`) | `context.credentials` |
 |---|---|---|
-| **Browsers** | Chromium only | All browsers according to the [release notes](https://playwright.dev/docs/release-notes); tested here in Chromium and WebKit |
+| **Browsers** | Chromium only | All browsers according to the [release notes](https://playwright.dev/docs/release-notes); tested here in Chromium and WebKit (WebKit not on Linux, see below) |
 | **How it works** | Virtual authenticator inside the browser, so its WebAuthn stack runs | Script replaces `navigator.credentials.create()` and `.get()`; keys live in the Playwright process |
 | **Setup** | CDP session, `WebAuthn.enable`, `addVirtualAuthenticator` | `context.credentials.install()` |
 | **User verification** | Configurable, including failure (`isUserVerified: false`) | Always succeeds |
@@ -189,6 +189,7 @@ The [`Credentials` docs](https://playwright.dev/docs/api/class-credentials) say 
 ## Important Notes
 
 - **Chromium only applies to CDP**: CDP WebAuthn is not available in Firefox or WebKit, so those specs run in Chromium only. `context.credentials` has no such limit.
+- **WebKit runs on macOS and Windows only**: Playwright's WebKit build for Linux has no `window.PublicKeyCredential`. `context.credentials` still replaces `navigator.credentials` there (Step 5a, which calls it directly, passes), but `@simplewebauthn/browser` checks for that global first and reports "WebAuthn is not supported in this browser". The WebKit project is therefore left out on Linux, which includes CI.
 - **Firefox is not part of the test run**: Playwright's Firefox 157 build exits during startup on the macOS 27 machine this was developed on, with `Could not find profile folder`. It also happens when starting the binary directly, without Playwright. The cause is unknown, so whether the demo passes in Firefox is untested.
 - **localhost**: WebAuthn requires a secure context. `localhost` is treated as secure.
 - Tests run sequentially (`workers: 1`, set in `e2e/playwright.config.ts`)
