@@ -8,9 +8,9 @@ export function renderRegister(root: HTMLElement) {
       <h1>Create Account</h1>
       <p class="subtitle">Register with a passkey — no password needed.</p>
       <label for="username">Username</label>
-      <input type="text" id="username" placeholder="Enter a username" autocomplete="username webauthn" />
+      <input type="text" id="username" placeholder="Enter a username" autocomplete="username" />
       <button id="register-btn">Create Passkey</button>
-      <div id="message"></div>
+      <div id="message" role="status"></div>
       <a href="#/login" class="link">Already have an account? Sign in</a>
     </div>
   `;

@@ -8,7 +8,22 @@
  * ╚══════════════════════════════════════════════════════════════════╝
  */
 
-import { test as base, expect, type CDPSession } from '@playwright/test';
+import type { CDPSession } from '@playwright/test';
+import {
+  test,
+  expect,
+  createVirtualAuthenticator,
+} from '../fixtures/webauthn.fixture.js';
+import {
+  expectSignedInAs,
+  loginViaUi,
+  logout,
+  message,
+  registerViaUi,
+  submitLogin,
+  submitRegistration,
+  uniqueName,
+} from '../fixtures/app.js';
 
 // =====================================================================
 //  BACKGROUND: What is CDP?
@@ -27,26 +42,30 @@ import { test as base, expect, type CDPSession } from '@playwright/test';
 //
 //  CDP Docs: https://chromedevtools.github.io/devtools-protocol/tot/WebAuthn/
 //
+//  How this tour is built: Steps 1 and 2 send the CDP commands by hand, so
+//  you see exactly what happens. From Step 3 on the tests use the
+//  `authenticator` fixture from fixtures/webauthn.fixture.ts, which wraps
+//  those same commands and also cleans up when a test fails.
+//
 // =====================================================================
 
+test.describe('CDP WebAuthn Demo', () => {
 
-// =====================================================================
-//  STEP 1: Getting a CDP Session
-// =====================================================================
-//
-//  Playwright provides `page.context().newCDPSession(page)` to get
-//  a CDP session. This session is scoped to the page — meaning
-//  the virtual authenticator only affects this specific page.
-//
-//  Important: CDP sessions are Chromium-only. Firefox and WebKit
-//  do NOT support CDP, so WebAuthn testing this way only works
-//  with Chromium-based browsers. For other browsers, see
-//  passkey-credentials-demo.spec.ts.
-//
+  // =====================================================================
+  //  STEP 1: Getting a CDP Session
+  // =====================================================================
+  //
+  //  Playwright provides `page.context().newCDPSession(page)` to get
+  //  a CDP session. This session is scoped to the page — meaning
+  //  the virtual authenticator only affects this specific page.
+  //
+  //  Important: CDP sessions are Chromium-only. Firefox and WebKit
+  //  do NOT support CDP, so WebAuthn testing this way only works
+  //  with Chromium-based browsers. For other browsers, see
+  //  passkey-credentials-demo.spec.ts.
+  //
 
-base.describe('CDP WebAuthn Demo', () => {
-
-  base('Step 1: Creating a CDP session and enabling WebAuthn', async ({ page }) => {
+  test('Step 1: Creating a CDP session and enabling WebAuthn', async ({ page }) => {
     // ───────────────────────────────────────────────────────────────
     //  Create a CDP session from the page context.
     //  This gives us direct access to the Chrome DevTools Protocol.
@@ -69,12 +88,38 @@ base.describe('CDP WebAuthn Demo', () => {
       enableUI: false,
     });
 
-    // At this point, WebAuthn is intercepted, but we have no
-    // authenticators yet. Any WebAuthn API call will fail with
-    // "NotAllowedError" because there's nothing to handle it.
+    // ───────────────────────────────────────────────────────────────
+    //  WebAuthn is intercepted now, but there is no authenticator yet.
+    //  A ceremony does not fail: it waits, like a browser waiting for
+    //  you to plug in a security key.
+    // ───────────────────────────────────────────────────────────────
+    const username = uniqueName('late-authenticator');
+    await submitRegistration(page, username);
+    await expect(
+      page.getByRole('button', { name: 'Waiting for passkey...' }),
+    ).toBeDisabled();
+    await expect(message(page)).toBeEmpty();
 
     // ───────────────────────────────────────────────────────────────
-    //  Cleanup: Always disable when done.
+    //  As soon as an authenticator appears, it answers the waiting
+    //  ceremony. Step 2 looks at this command and its options.
+    // ───────────────────────────────────────────────────────────────
+    await cdpSession.send('WebAuthn.addVirtualAuthenticator', {
+      options: {
+        protocol: 'ctap2',
+        transport: 'internal',
+        hasResidentKey: true,
+        hasUserVerification: true,
+        isUserVerified: true,
+        automaticPresenceSimulation: true,
+      },
+    });
+    await expectSignedInAs(page, username);
+
+    // ───────────────────────────────────────────────────────────────
+    //  Cleanup: disable when done. (Playwright discards the browser
+    //  context after each test anyway, so nothing leaks if a test
+    //  fails before this line.)
     // ───────────────────────────────────────────────────────────────
     await cdpSession.send('WebAuthn.disable');
   });
@@ -116,7 +161,7 @@ base.describe('CDP WebAuthn Demo', () => {
   //      Without this, you'd need to manually trigger presence.
   //
 
-  base('Step 2: Adding and inspecting a virtual authenticator', async ({ page }) => {
+  test('Step 2: Adding and inspecting a virtual authenticator', async ({ page }) => {
     const cdpSession = await page.context().newCDPSession(page);
     await cdpSession.send('WebAuthn.enable', { enableUI: false });
 
@@ -137,16 +182,27 @@ base.describe('CDP WebAuthn Demo', () => {
       },
     );
 
-    // authenticatorId is a string like "1" — CDP's reference to
-    // this specific authenticator instance.
-    expect(authenticatorId).toBeTruthy();
-    console.log('Virtual Authenticator ID:', authenticatorId);
+    // authenticatorId is CDP's reference to this authenticator instance.
+    // Every later command names the authenticator it is meant for.
+    expect(authenticatorId).toEqual(expect.any(String));
+
+    // A new authenticator holds no credentials
+    const { credentials } = await cdpSession.send('WebAuthn.getCredentials', {
+      authenticatorId,
+    });
+    expect(credentials).toEqual([]);
 
     // ───────────────────────────────────────────────────────────────
-    //  At this point, any WebAuthn ceremony on this page will be
-    //  handled by our virtual authenticator automatically.
-    //  No user interaction needed.
+    //  From now on, any WebAuthn ceremony on this page is handled by
+    //  the virtual authenticator, without any waiting.
     // ───────────────────────────────────────────────────────────────
+    await registerViaUi(page, uniqueName('first-passkey'));
+
+    const { credentials: afterRegistration } = await cdpSession.send(
+      'WebAuthn.getCredentials',
+      { authenticatorId },
+    );
+    expect(afterRegistration).toHaveLength(1);
 
     // Cleanup
     await cdpSession.send('WebAuthn.removeVirtualAuthenticator', {
@@ -160,50 +216,32 @@ base.describe('CDP WebAuthn Demo', () => {
   //  STEP 3: Full Registration + Login Flow
   // =====================================================================
   //
-  //  Now we put it all together: enable WebAuthn, create an authenticator,
-  //  register a passkey, inspect the stored credential, then login.
+  //  From here on, the `authenticator` fixture does Steps 1 and 2 for us
+  //  and removes the authenticator after the test. Its methods are thin
+  //  wrappers; the CDP command behind each one is named in the comments.
   //
 
-  base('Step 3: Full passkey flow with credential inspection', async ({ page }) => {
-    const cdpSession = await page.context().newCDPSession(page);
-    await cdpSession.send('WebAuthn.enable', { enableUI: false });
-
-    const { authenticatorId } = await cdpSession.send(
-      'WebAuthn.addVirtualAuthenticator',
-      {
-        options: {
-          protocol: 'ctap2',
-          transport: 'internal',
-          hasResidentKey: true,
-          hasUserVerification: true,
-          isUserVerified: true,
-          automaticPresenceSimulation: true,
-        },
-      },
-    );
-
+  test('Step 3: Full passkey flow with credential inspection', async ({
+    page,
+    authenticator,
+  }) => {
     // ───────────────────────────────────────────────────────────────
     //  3a. Register a passkey
     // ───────────────────────────────────────────────────────────────
-    await page.goto('/#/register');
-    await page.fill('#username', `demo-user-${Date.now()}`);
-    await page.click('#register-btn');
-    await page.waitForURL('**/dashboard');
+    const username = uniqueName('demo-user');
+    await registerViaUi(page, username);
 
     // ───────────────────────────────────────────────────────────────
-    //  3b. Inspect credentials via CDP
+    //  3b. Inspect credentials via CDP (WebAuthn.getCredentials)
     //
-    //  WebAuthn.getCredentials returns all credentials stored on
-    //  the virtual authenticator. This is incredibly useful for
-    //  verifying that registration actually worked at the
-    //  authenticator level (not just the UI level).
+    //  This returns all credentials stored on the virtual
+    //  authenticator. It verifies that registration worked at the
+    //  authenticator level, not just the UI level.
+    //
+    //  The result includes the private key. Do not log it in a real
+    //  project.
     // ───────────────────────────────────────────────────────────────
-    const { credentials } = await cdpSession.send('WebAuthn.getCredentials', {
-      authenticatorId,
-    });
-
-    console.log('Stored credentials:', JSON.stringify(credentials, null, 2));
-
+    const credentials = await authenticator.getCredentials();
     expect(credentials).toHaveLength(1);
 
     const cred = credentials[0];
@@ -211,104 +249,90 @@ base.describe('CDP WebAuthn Demo', () => {
     expect(cred.rpId).toBe('localhost');
     // userHandle is the base64-encoded user ID from the server
     expect(cred.userHandle).toBeTruthy();
-    // signCount starts at 1 after registration
-    expect(cred.signCount).toBeGreaterThanOrEqual(1);
+    // The CDP authenticator counts the registration itself as the first use
+    expect(cred.signCount).toBe(1);
 
     // ───────────────────────────────────────────────────────────────
     //  3c. Logout and Login
     // ───────────────────────────────────────────────────────────────
-    await page.click('#logout-btn');
-    await page.waitForURL('**/login');
-
-    await page.click('#login-btn');
-    await page.waitForURL('**/dashboard');
+    await logout(page);
+    await loginViaUi(page, username);
 
     // ───────────────────────────────────────────────────────────────
     //  3d. Verify signCount incremented after login
     //
     //  The signature counter is a security mechanism. It increments
     //  on every use. If a server ever receives a counter value
-    //  that is lower than the stored one, it knows the credential
-    //  may have been cloned.
+    //  that is not higher than the stored one, it knows the
+    //  credential may have been cloned.
     // ───────────────────────────────────────────────────────────────
-    const { credentials: afterLogin } = await cdpSession.send(
-      'WebAuthn.getCredentials',
-      { authenticatorId },
-    );
-
-    expect(afterLogin[0].signCount).toBeGreaterThan(cred.signCount);
-    console.log(
-      `Sign count: ${cred.signCount} → ${afterLogin[0].signCount}`,
-    );
-
-    // Cleanup
-    await cdpSession.send('WebAuthn.removeVirtualAuthenticator', {
-      authenticatorId,
-    });
-    await cdpSession.send('WebAuthn.disable');
+    const [afterLogin] = await authenticator.getCredentials();
+    expect(afterLogin.signCount).toBe(cred.signCount + 1);
   });
 
 
   // =====================================================================
-  //  STEP 4: Advanced — Multiple Authenticators
+  //  STEP 4: Multiple Authenticators
   // =====================================================================
   //
-  //  You can add multiple virtual authenticators to simulate
-  //  scenarios like:
-  //    - User has a platform authenticator AND a USB key
-  //    - Testing authenticator selection prompts
-  //    - Cross-device authentication flows
+  //  You can add several virtual authenticators to one page, for example
+  //  a platform authenticator and a USB key.
+  //
+  //  The browser sends a ceremony to all of them and uses the first answer.
+  //  With automatic presence switched on everywhere, every authenticator
+  //  answers: each one creates a passkey, and all but one are left behind
+  //  unused. So a test with several authenticators has to say which one
+  //  "the user touches", with WebAuthn.setAutomaticPresenceSimulation.
   //
 
-  base('Step 4: Multiple authenticators', async ({ page }) => {
-    const cdpSession = await page.context().newCDPSession(page);
-    await cdpSession.send('WebAuthn.enable', { enableUI: false });
-
-    // Platform authenticator (TouchID-style)
-    const { authenticatorId: platformId } = await cdpSession.send(
-      'WebAuthn.addVirtualAuthenticator',
-      {
-        options: {
-          protocol: 'ctap2',
-          transport: 'internal',
-          hasResidentKey: true,
-          hasUserVerification: true,
-          isUserVerified: true,
-          automaticPresenceSimulation: true,
-        },
-      },
+  test('Step 4: Multiple authenticators', async ({ page, authenticator }) => {
+    // `authenticator` is the platform authenticator from the fixture.
+    // The USB key joins it on the same CDP session.
+    const usbKey = await createVirtualAuthenticator(
+      page,
+      { transport: 'usb' },
+      authenticator.cdpSession,
     );
+    expect(usbKey.authenticatorId).not.toBe(authenticator.authenticatorId);
 
-    // USB security key (like YubiKey)
-    const { authenticatorId: usbId } = await cdpSession.send(
-      'WebAuthn.addVirtualAuthenticator',
-      {
-        options: {
-          protocol: 'ctap2',
-          transport: 'usb',
-          hasResidentKey: true,
-          hasUserVerification: false, // USB keys often don't have biometrics
-          isUserVerified: false,
-          automaticPresenceSimulation: true,
-        },
-      },
-    );
+    // ───────────────────────────────────────────────────────────────
+    //  4a. The user registers with the platform authenticator and
+    //      leaves the USB key alone.
+    // ───────────────────────────────────────────────────────────────
+    await usbKey.setAutomaticPresence(false);
 
-    console.log('Platform authenticator:', platformId);
-    console.log('USB authenticator:', usbId);
+    const username = uniqueName('two-authenticators');
+    await registerViaUi(page, username);
 
-    // Both authenticators are now active.
-    // The browser will prefer the platform authenticator for
-    // passkey ceremonies (transport: 'internal').
+    // Each authenticator has its own credential store
+    expect(await authenticator.getCredentials()).toHaveLength(1);
+    expect(await usbKey.getCredentials()).toHaveLength(0);
 
-    // Cleanup
-    await cdpSession.send('WebAuthn.removeVirtualAuthenticator', {
-      authenticatorId: platformId,
-    });
-    await cdpSession.send('WebAuthn.removeVirtualAuthenticator', {
-      authenticatorId: usbId,
-    });
-    await cdpSession.send('WebAuthn.disable');
+    // ───────────────────────────────────────────────────────────────
+    //  4b. Still signed in, the user adds the USB key as a second
+    //      passkey for the same account.
+    // ───────────────────────────────────────────────────────────────
+    await authenticator.setAutomaticPresence(false);
+    await usbKey.setAutomaticPresence(true);
+
+    await registerViaUi(page, username);
+
+    expect(await authenticator.getCredentials()).toHaveLength(1);
+    expect(await usbKey.getCredentials()).toHaveLength(1);
+
+    // ───────────────────────────────────────────────────────────────
+    //  4c. The server knows both passkeys: the USB key alone is
+    //      enough to sign in.
+    // ───────────────────────────────────────────────────────────────
+    await logout(page);
+    await loginViaUi(page, username);
+
+    const [usbPasskey] = await usbKey.getCredentials();
+    expect(usbPasskey.signCount).toBe(2);
+    const [platformPasskey] = await authenticator.getCredentials();
+    expect(platformPasskey.signCount).toBe(1);
+
+    await usbKey.remove();
   });
 
 
@@ -319,56 +343,116 @@ base.describe('CDP WebAuthn Demo', () => {
   //  With isUserVerified: false the authenticator offers user verification
   //  but it fails, as when a biometric check does not match.
   //
-  //  The ceremony then ends in a NotAllowedError in the browser. The server
-  //  never gets a response to verify, even though it only asks for
-  //  userVerification: 'preferred'. The page cannot tell a failed check from
-  //  a user cancelling, so the app shows its cancellation message.
+  //  The ceremony then ends in a NotAllowedError in the browser, and the
+  //  server never gets a response to verify. The page cannot tell a failed
+  //  check from a user cancelling, so the app shows its cancellation
+  //  message.
   //
   //  context.credentials cannot reproduce this: its user verification always
   //  succeeds (see passkey-credentials-demo.spec.ts).
   //
 
-  base('Step 5: User verification failure scenario', async ({ page }) => {
-    const cdpSession = await page.context().newCDPSession(page);
-    await cdpSession.send('WebAuthn.enable', { enableUI: false });
+  test.describe('with failing user verification', () => {
+    // The fixture's settings can be changed per file or describe block
+    test.use({ authenticatorOptions: { isUserVerified: false } });
 
-    // Authenticator where user verification FAILS
-    const { authenticatorId } = await cdpSession.send(
-      'WebAuthn.addVirtualAuthenticator',
-      {
-        options: {
-          protocol: 'ctap2',
-          transport: 'internal',
-          hasResidentKey: true,
-          hasUserVerification: true,
-          isUserVerified: false, // ← This is the key difference
-          automaticPresenceSimulation: true,
-        },
-      },
-    );
+    test('Step 5: User verification failure scenario', async ({
+      page,
+      authenticator,
+    }) => {
+      await submitRegistration(page, uniqueName('uv-fail'));
 
-    await page.goto('/#/register');
-    await page.fill('#username', `uv-fail-${Date.now()}`);
-    await page.click('#register-btn');
+      // The message marks the end of the ceremony, so check it first. A
+      // success would redirect shortly afterwards, which the URL check then
+      // rules out.
+      await expect(message(page)).toHaveText('Passkey creation was cancelled.');
+      await expect(page).toHaveURL(/#\/register$/);
 
-    // The message marks the end of the ceremony, so check it first. A success
-    // would redirect shortly afterwards, which the URL check then rules out.
-    await expect(page.locator('#message')).toHaveText(
-      'Passkey creation was cancelled.',
-    );
-    await expect(page).toHaveURL(/#\/register$/);
-
-    // The failed ceremony left nothing on the authenticator
-    const { credentials } = await cdpSession.send('WebAuthn.getCredentials', {
-      authenticatorId,
+      // The failed ceremony left nothing on the authenticator
+      expect(await authenticator.getCredentials()).toHaveLength(0);
     });
-    expect(credentials).toHaveLength(0);
+  });
 
-    // Cleanup
-    await cdpSession.send('WebAuthn.removeVirtualAuthenticator', {
-      authenticatorId,
-    });
-    await cdpSession.send('WebAuthn.disable');
+
+  // =====================================================================
+  //  STEP 6: Changing User Verification at Runtime
+  // =====================================================================
+  //
+  //  WebAuthn.setUserVerified switches the outcome of user verification on
+  //  an existing authenticator. That lets one test cover "it worked, then
+  //  the fingerprint did not match, then it worked again" without setting
+  //  up a second authenticator.
+  //
+
+  test('Step 6: Toggling user verification during a test', async ({
+    page,
+    authenticator,
+  }) => {
+    const username = uniqueName('uv-toggle');
+    await registerViaUi(page, username);
+    await logout(page);
+
+    // The fingerprint no longer matches
+    await authenticator.setUserVerified(false);
+    await submitLogin(page);
+    await expect(message(page)).toHaveText('Authentication was cancelled.');
+    await expect(page).toHaveURL(/#\/login$/);
+
+    // The failed attempt did not use the passkey
+    const [unused] = await authenticator.getCredentials();
+    expect(unused.signCount).toBe(1);
+
+    // Second try with the right finger
+    await authenticator.setUserVerified(true);
+    await loginViaUi(page, username);
+  });
+
+
+  // =====================================================================
+  //  STEP 7: Seeding a Passkey with addCredential
+  // =====================================================================
+  //
+  //  WebAuthn.addCredential puts a passkey on an authenticator without a
+  //  ceremony. With a passkey the server already knows, a test can start
+  //  at the login instead of registering first.
+  //
+  //  Here the passkey is captured from a registration in another browser
+  //  context. In a real suite you would capture it once, or let your
+  //  backend provision it, and reuse it across tests. The captured data
+  //  contains the private key: keep it out of version control.
+  //
+  //  The context.credentials counterpart is create(), see Step 3b there.
+  //
+
+  test('Step 7: A captured passkey logs in from a new context', async ({
+    browser,
+    baseURL,
+  }) => {
+    const username = uniqueName('cdp-seed');
+    const enrollContext = await browser.newContext({ baseURL });
+    const seededContext = await browser.newContext({ baseURL });
+
+    try {
+      // Capture: let the app register a passkey, then read it back
+      const enrollPage = await enrollContext.newPage();
+      const enrollAuthenticator = await createVirtualAuthenticator(enrollPage);
+      await registerViaUi(enrollPage, username);
+      const [captured] = await enrollAuthenticator.getCredentials();
+
+      // Seed: this context never ran a registration ceremony
+      const seededPage = await seededContext.newPage();
+      const seededAuthenticator = await createVirtualAuthenticator(seededPage);
+      await seededAuthenticator.addCredential(captured);
+      await loginViaUi(seededPage, username);
+
+      // The seeded copy continues counting where the captured one stopped
+      const [used] = await seededAuthenticator.getCredentials();
+      expect(used.credentialId).toBe(captured.credentialId);
+      expect(used.signCount).toBe(captured.signCount + 1);
+    } finally {
+      await seededContext.close();
+      await enrollContext.close();
+    }
   });
 
 
@@ -376,16 +460,16 @@ base.describe('CDP WebAuthn Demo', () => {
   //  REFERENCE: All CDP WebAuthn Commands
   // =====================================================================
   //
-  //  WebAuthn.enable              — Start intercepting WebAuthn calls
-  //  WebAuthn.disable             — Stop intercepting
-  //  WebAuthn.addVirtualAuthenticator   — Create a virtual authenticator
-  //  WebAuthn.removeVirtualAuthenticator — Remove one
-  //  WebAuthn.getCredentials      — List all credentials on an authenticator
-  //  WebAuthn.addCredential       — Manually add a credential
+  //  WebAuthn.enable              — Start intercepting WebAuthn calls (Step 1)
+  //  WebAuthn.disable             — Stop intercepting (Step 1)
+  //  WebAuthn.addVirtualAuthenticator   — Create a virtual authenticator (Step 1, 2)
+  //  WebAuthn.removeVirtualAuthenticator — Remove one (Step 2)
+  //  WebAuthn.getCredentials      — List all credentials on an authenticator (Step 2, 3)
+  //  WebAuthn.addCredential       — Manually add a credential (Step 7)
   //  WebAuthn.removeCredential    — Remove a specific credential
-  //  WebAuthn.clearCredentials    — Remove all credentials
-  //  WebAuthn.setUserVerified     — Toggle UV at runtime
-  //  WebAuthn.setAutomaticPresenceSimulation — Toggle auto-presence
+  //  WebAuthn.clearCredentials    — Remove all credentials (passkey-register.spec.ts)
+  //  WebAuthn.setUserVerified     — Toggle UV at runtime (Step 6)
+  //  WebAuthn.setAutomaticPresenceSimulation — Toggle auto-presence (Step 4)
   //
   // =====================================================================
 });

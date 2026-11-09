@@ -8,9 +8,13 @@ import postgres from 'postgres';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, '../../../.env') });
 
-const connectionString = process.env.DATABASE_URL!;
 
 async function main() {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error('DATABASE_URL is not set. Copy .env.example to .env first.');
+  }
+
   console.log('Running migrations...');
 
   const migrationClient = postgres(connectionString, { max: 1 });

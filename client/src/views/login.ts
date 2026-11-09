@@ -8,7 +8,7 @@ export function renderLogin(root: HTMLElement) {
       <h1>Sign In</h1>
       <p class="subtitle">Use your passkey to sign in.</p>
       <button id="login-btn">Sign in with Passkey</button>
-      <div id="message"></div>
+      <div id="message" role="status"></div>
       <a href="#/register" class="link">Don't have an account? Register</a>
     </div>
   `;

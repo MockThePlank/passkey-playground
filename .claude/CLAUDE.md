@@ -24,7 +24,10 @@ npm test
 npm run test:ui
 
 # Run a single test file
-npx playwright test tests/passkey-register.spec.ts -w e2e
+npm test -w e2e -- tests/passkey-register.spec.ts
+
+# Typecheck all three packages
+npm run typecheck
 
 # Run headed (visible browser)
 npm run test:headed -w e2e
@@ -38,7 +41,9 @@ This is an npm workspaces monorepo with three packages: `server`, `client`, and 
 - WebAuthn registration/login via `@simplewebauthn/server` under `/api/auth/*`
 - PostgreSQL with Drizzle ORM (two tables: `users` and `credentials`)
 - Session management via `@fastify/secure-session` (cookie-based, 24h TTL)
-- Challenges are stored in the session and verified immediately
+- Challenges are stored in the session and are single-use: `lib/challenges.ts` keeps an in-memory list, and each verify endpoint consumes the challenge whether or not verification succeeds
+- User verification is required, both in the options and in the verification
+- Registration stores the user and the credential in one transaction
 - Credential signature counters are incremented on each login for replay protection
 - Config (RP_ID, RP_ORIGIN, SESSION_SECRET, DATABASE_URL) loaded from env vars
 
@@ -49,7 +54,9 @@ This is an npm workspaces monorepo with three packages: `server`, `client`, and 
 - No framework — direct DOM manipulation in view files
 
 **E2E** (`e2e/`) — Playwright tests using CDP virtual authenticators and `context.credentials`
-- `fixtures/webauthn.fixture.ts` provides a `createVirtualAuthenticator()` helper that sets up a CDP session with `WebAuthn.enable` and returns methods for credential inspection
+- `fixtures/webauthn.fixture.ts` provides the `authenticator` fixture (configurable with `test.use({ authenticatorOptions })`) and a `createVirtualAuthenticator()` helper that sets up a CDP session with `WebAuthn.enable` and returns methods for credential inspection
+- `fixtures/app.ts` holds the helpers that operate the app (`registerViaUi`, `loginViaUi`, `logout`, `message`). Use them, and role/label locators, instead of ids or CSS classes
+- `global-setup.ts` deletes the users a run created; it needs `DATABASE_URL` (read from the root `.env`)
 - Tests run with `workers: 1` (WebAuthn state is per browser context). CDP specs are Chromium-only; `passkey-credentials-demo.spec.ts` also runs in WebKit
 - Playwright config auto-starts both server and client via `webServer`
 - `passkey-cdp-demo.spec.ts` and `passkey-credentials-demo.spec.ts` are commented learning guides, not just test files

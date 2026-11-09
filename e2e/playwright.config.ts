@@ -2,11 +2,13 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests',
+  // Deletes the users a run creates; see the file for details
+  globalSetup: './global-setup.ts',
   fullyParallel: false, // WebAuthn tests share state, run sequentially
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: 1,
-  reporter: 'html',
+  reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'html',
 
   use: {
     baseURL: 'http://localhost:5173',
