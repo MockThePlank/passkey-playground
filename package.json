@@ -2,11 +2,12 @@
   "name": "passkey-playground",
   "version": "1.0.0",
   "private": true,
-  "description": "Passkey (WebAuthn) demo app with Playwright CDP testing",
+  "description": "Passkey (WebAuthn) demo app with Playwright and Vibium testing",
   "workspaces": [
     "server",
     "client",
-    "e2e"
+    "e2e",
+    "e2e-vibium"
   ],
   "scripts": {
     "dev:server": "npm run dev -w server",
@@ -16,6 +17,7 @@
     "db:migrate": "npm run db:migrate -w server",
     "test": "npm run test -w e2e",
     "test:ui": "npm run test:ui -w e2e",
+    "test:vibium": "npm run test -w e2e-vibium",
     "typecheck": "npm run typecheck --workspaces",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down"
@@ -29,6 +31,7 @@
   },
   "allowScripts": {
     "esbuild": false,
-    "fsevents": false
+    "fsevents": false,
+    "vibium": false
   }
 }

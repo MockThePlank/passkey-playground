@@ -26,16 +26,22 @@ npm run test:ui
 # Run a single test file
 npm test -w e2e -- tests/passkey-register.spec.ts
 
-# Typecheck all three packages
+# Typecheck all packages
 npm run typecheck
 
 # Run headed (visible browser)
 npm run test:headed -w e2e
+
+# Run the Vibium suite (first time: npx vibium install)
+npm run test:vibium
+
+# Run a single Vibium test
+npm test -w e2e-vibium -- --test-name-pattern "Step 2"
 ```
 
 ## Architecture
 
-This is an npm workspaces monorepo with three packages: `server`, `client`, and `e2e`.
+This is an npm workspaces monorepo with four packages: `server`, `client`, `e2e`, and `e2e-vibium`.
 
 **Server** (`server/`) — Fastify backend on port 3000
 - WebAuthn registration/login via `@simplewebauthn/server` under `/api/auth/*`
@@ -60,6 +66,12 @@ This is an npm workspaces monorepo with three packages: `server`, `client`, and 
 - Tests run with `workers: 1` (WebAuthn state is per browser context). CDP specs are Chromium-only; `passkey-credentials-demo.spec.ts` also runs in WebKit, except on Linux (and so not in CI), where Playwright's WebKit has no `window.PublicKeyCredential`
 - Playwright config auto-starts both server and client via `webServer`
 - `passkey-cdp-demo.spec.ts` and `passkey-credentials-demo.spec.ts` are commented learning guides, not just test files
+
+**E2E Vibium** (`e2e-vibium/`) — the same flows with Vibium on Node's test runner (`node:test`, loaded through `tsx`)
+- Vibium has no WebAuthn API. `support/cdp-authenticator.ts` reaches CDP through chromedriver's `goog:cdp.sendCommand` (Chrome only, uses the private `browser.client`); `support/soft-authenticator.ts` installs `soft-authenticator.page.js` as an init script that replaces `navigator.credentials`
+- `soft-authenticator.page.js` runs in the page and is read as text: keep it self-contained plain JavaScript
+- `run.mjs` starts server and client if they are not running, runs the tests and deletes the users the run created
+- Vibium's install script is denied in `allowScripts`; the browser comes from `npx vibium install`
 
 ## Environment
 

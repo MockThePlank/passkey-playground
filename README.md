@@ -1,6 +1,6 @@
 # 🔑 Passkey Playground
 
-A minimal demo app that shows how to **test WebAuthn/Passkey flows with Playwright**, using Chrome DevTools Protocol (CDP) virtual authenticators and Playwright's built-in `context.credentials` API.
+A minimal demo app that shows how to **test WebAuthn/Passkey flows with Playwright**, using Chrome DevTools Protocol (CDP) virtual authenticators and Playwright's built-in `context.credentials` API. A second, smaller suite does the same with **[Vibium](https://github.com/VibiumDev/vibium)**, which has no passkey API of its own.
 
 ## What This Project Demonstrates
 
@@ -11,6 +11,7 @@ A minimal demo app that shows how to **test WebAuthn/Passkey flows with Playwrig
 - Configuring virtual authenticators (platform and USB), choosing which one answers, and simulating failed user verification
 - Seeding a known passkey with CDP (`WebAuthn.addCredential`) so a test can start at the login
 - Using `context.credentials` to register, seed and reuse passkeys without CDP
+- Doing both with Vibium: CDP through WebDriver BiDi, and a software authenticator installed as an init script
 
 ## Tech Stack
 
@@ -20,7 +21,7 @@ A minimal demo app that shows how to **test WebAuthn/Passkey flows with Playwrig
 | Backend | Fastify, `@simplewebauthn/server` |
 | Database | PostgreSQL (Docker) |
 | ORM | Drizzle |
-| Testing | Playwright (CDP WebAuthn and `context.credentials`) |
+| Testing | Playwright (CDP WebAuthn and `context.credentials`), Vibium with Node's test runner |
 
 ## Quick Start
 
@@ -70,11 +71,29 @@ npm run test:headed -w e2e
 # Run a single test file
 npm test -w e2e -- tests/passkey-register.spec.ts
 
-# Typecheck all three packages
+# Typecheck all packages
 npm run typecheck
 ```
 
-The tests need the database from `npm run db:up`. Each run deletes the users it created (see `e2e/global-setup.ts`); accounts from before the run are left alone.
+### Run the Vibium Tests
+
+```bash
+# Install Chrome for Testing (first time only)
+npx vibium install
+
+# Run the Vibium suite
+npm run test:vibium
+
+# Run headed (see the browser)
+npm run test:headed -w e2e-vibium
+
+# Run a single step
+npm test -w e2e-vibium -- --test-name-pattern "Step 2"
+```
+
+`npx vibium install` is needed because this repository does not run install scripts of dependencies (`allowScripts` in `package.json`), and Vibium would otherwise download its browser in one.
+
+The tests need the database from `npm run db:up`. Each run, of either suite, deletes the users it created (see `e2e/global-setup.ts` and `e2e-vibium/run.mjs`); accounts from before the run are left alone.
 
 The same steps run on GitHub Actions for every push and pull request (`.github/workflows/test.yml`), in Chromium only: see the WebKit note under "Important Notes".
 
@@ -96,7 +115,7 @@ passkey-playground/
 │       ├── api.ts            # API client
 │       └── main.ts           # Hash router
 │
-└── e2e/              # ⭐ Playwright tests (the main attraction)
+├── e2e/              # ⭐ Playwright tests (the main attraction)
     ├── global-setup.ts           # Deletes the users a test run creates
     ├── fixtures/
     │   ├── webauthn.fixture.ts   # Reusable CDP authenticator fixture
@@ -106,6 +125,17 @@ passkey-playground/
         ├── passkey-login.spec.ts              # Login tests
         ├── passkey-cdp-demo.spec.ts           # 📖 Commented guide: CDP
         └── passkey-credentials-demo.spec.ts   # 📖 Commented guide: context.credentials
+│
+└── e2e-vibium/       # The same with Vibium and Node's test runner
+    ├── run.mjs                   # Starts the app, runs the tests, deletes test users
+    ├── support/
+    │   ├── app.ts                         # How the tests operate the app
+    │   ├── cdp-authenticator.ts           # Route A: CDP through WebDriver BiDi
+    │   ├── soft-authenticator.ts          # Route B: installs the script below
+    │   └── soft-authenticator.page.js     # The authenticator that runs in the page
+    └── tests/
+        ├── passkey-cdp-demo.test.ts                 # 📖 Commented guide: Route A
+        └── passkey-soft-authenticator-demo.test.ts  # 📖 Commented guide: Route B
 ```
 
 ## Key File: `passkey-cdp-demo.spec.ts`
@@ -151,6 +181,25 @@ The counterpart to the CDP demo, using Playwright's built-in API:
 **Use CDP** when the authenticator itself is what you test: failed user verification, specific transports, several authenticators, or the browser's own WebAuthn behaviour.
 
 The [`Credentials` docs](https://playwright.dev/docs/api/class-credentials) say nothing about user verification or transports. Those two rows come from the source of Playwright 1.64, and Step 5a of the demo fails if the behaviour changes.
+
+## The Same with Vibium
+
+[Vibium](https://github.com/VibiumDev/vibium) is built on WebDriver BiDi, which has no WebAuthn commands, so it has no passkey API. `e2e-vibium/` shows two ways to get one anyway. They mirror the two Playwright approaches above.
+
+| | Route A: CDP through BiDi | Route B: software authenticator |
+|---|---|---|
+| **Playwright counterpart** | CDP (`WebAuthn.*`) | `context.credentials` |
+| **How it works** | chromedriver's `goog:cdp.sendCommand` carries CDP commands over BiDi, and Vibium passes them on. The browser's WebAuthn stack runs | `context.addInitScript()` replaces `navigator.credentials.create()` and `.get()` with an authenticator written in JavaScript; real ES256 keys from WebCrypto |
+| **Browsers** | Chrome only | Not tied to an engine; run here in Chrome only (`VIBIUM_ENGINE=firefox` to try Firefox) |
+| **Vibium API used** | `browser.client`, which the typings mark as private | Public API only |
+| **User verification** | Configurable, including failure | Always succeeds |
+| **Seeding passkeys** | `WebAuthn.addCredential` | Second argument of `installSoftAuthenticator()` |
+| **`signCount` after registration** | 1 | 0 |
+| **You maintain** | A thin wrapper (`support/cdp-authenticator.ts`) | The authenticator itself (`support/soft-authenticator.page.js`, about 200 lines) |
+
+**Use Route B** by default: it depends on nothing that Vibium does not document. **Use Route A** when the authenticator's behaviour is what you test, and accept that a Vibium update may break the private access.
+
+Vibium is an automation library, not a test framework. The tests run on Node's built-in test runner, and `e2e-vibium/run.mjs` starts the app and cleans up, which Playwright's config does for the other suite.
 
 ## How CDP WebAuthn Works
 
