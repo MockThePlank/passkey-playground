@@ -240,6 +240,7 @@ Deleting the data removes the accounts but not the passkeys in your real authent
 | The app opens on port 5174 and passkeys fail | Port 5173 was taken, so Vite moved on. The server only accepts `RP_ORIGIN`. Free the port. |
 | Playwright: `Executable doesn't exist` | The browsers are missing. Run `npx playwright install chromium webkit`. |
 | Vibium cannot find or start a browser | Run `npx vibium install`. |
+| Vibium on Linux: `session not created: Chrome instance exited` | Chrome's sandbox cannot start, as on GitHub's runners. Run with `VIBIUM_CHROME_ARGS=--no-sandbox`, as the workflow does. `VIBIUM_CHROMEDRIVER_LOG_DIR=<folder>` writes a log that names the reason. |
 | `WebAuthn is not supported in this browser` | WebKit on Linux, see [Browser Support](#browser-support). Or the page is not on `localhost` and not on HTTPS. |
 | A passkey prompt appears and fails in the browser by hand | You opened `127.0.0.1`. Use `localhost`. |
 | Sign-in by hand offers a passkey and then fails | The passkey belongs to an account that was deleted. Remove it from your authenticator. |

@@ -53,7 +53,23 @@ jobs:
       # browser here
       - run: npx vibium install
 
+      # Chrome's sandbox cannot start on the runner (Ubuntu restricts the
+      # user namespaces it needs), so Chrome exits at launch. Playwright
+      # runs its Chromium without the sandbox by default; this does the
+      # same for Vibium.
       - run: npm run test:vibium
+        env:
+          VIBIUM_CHROME_ARGS: --no-sandbox
+          VIBIUM_CHROMEDRIVER_LOG_DIR: ${{ runner.temp }}/chromedriver-logs
+
+      # Says why Chrome did not start, which the test output does not
+      - uses: actions/upload-artifact@v7
+        if: ${{ failure() }}
+        with:
+          name: chromedriver-logs
+          path: ${{ runner.temp }}/chromedriver-logs/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - uses: actions/upload-artifact@v7
         if: ${{ !cancelled() }}
