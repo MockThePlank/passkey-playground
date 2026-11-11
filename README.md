@@ -198,7 +198,7 @@ test('rejects a response from another origin', async ({ page, authenticator }) =
 
 `passkey-server-verification.spec.ts` uses this for missing user verification, a broken signature, a foreign origin, challenge or relying party, an unknown passkey, and a username that is claimed while a registration is under way.
 
-Every spec file runs in Chromium only, because the fixture needs CDP. For a test that should also run in WebKit, use `context.credentials` instead of the fixture, and add the file to `testMatch` of the `webkit` project in `e2e/playwright.config.ts`.
+A spec that uses the fixture runs in Chromium only, because the fixture needs CDP. For a test that should also run in WebKit, use `context.credentials` instead of the fixture, and add the file to `testMatch` of the `webkit` project in `e2e/playwright.config.ts`.
 
 ### Vibium
 
@@ -314,6 +314,7 @@ Commit the generated files. CI and everyone else get the change through `npm run
 - Configuring virtual authenticators (platform and USB), choosing which one answers, and simulating failed user verification
 - Seeding a known passkey with CDP (`WebAuthn.addCredential`) so a test can start at the login
 - Using `context.credentials` to register, seed and reuse passkeys without CDP
+- Testing what the server must reject (missing user verification, a foreign origin, a broken signature) by tampering with a ceremony between browser and server
 - Doing both with Vibium: CDP through WebDriver BiDi, and a software authenticator installed as an init script
 
 | Component | Technology |
