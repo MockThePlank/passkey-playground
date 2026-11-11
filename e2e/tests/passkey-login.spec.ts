@@ -76,6 +76,21 @@ test.describe('Passkey Login', () => {
       expect(await response.json()).toEqual({ error: 'No pending login' });
     });
 
+    test('should reject a body that is not a WebAuthn response', async ({
+      request,
+    }) => {
+      for (const data of [{}, { id: 'abc' }, { id: 1, response: 'x' }]) {
+        const response = await request.post('/api/auth/login/verify', { data });
+
+        // As in the registration spec: the code, not the status, shows
+        // that the body itself was refused
+        expect(response.status()).toBe(400);
+        expect(await response.json()).toMatchObject({
+          code: 'FST_ERR_VALIDATION',
+        });
+      }
+    });
+
     test('should accept each login response only once', async ({
       page,
       request,

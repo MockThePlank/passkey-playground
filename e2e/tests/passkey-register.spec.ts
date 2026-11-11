@@ -134,7 +134,13 @@ test.describe('Passkey Registration', () => {
         const response = await request.post('/api/auth/register/verify', {
           data,
         });
+
+        // The status alone proves nothing: without a pending registration
+        // every body gets a 400. The code says the body itself was refused.
         expect(response.status()).toBe(400);
+        expect(await response.json()).toMatchObject({
+          code: 'FST_ERR_VALIDATION',
+        });
       }
     });
   });
