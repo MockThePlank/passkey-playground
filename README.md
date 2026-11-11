@@ -1,6 +1,19 @@
 # 🔑 Passkey Playground
 
-A minimal demo app that shows how to **test WebAuthn/Passkey flows with Playwright**, using Chrome DevTools Protocol (CDP) virtual authenticators and Playwright's built-in `context.credentials` API. A second, smaller suite does the same with **[Vibium](https://github.com/VibiumDev/vibium)**, which has no passkey API of its own.
+A minimal demo app with passkey login, and two test suites that show how to **test WebAuthn/passkey flows without real hardware**: one with **[Playwright](https://playwright.dev)**, one with **[Vibium](https://github.com/VibiumDev/vibium)**.
+
+Both suites show the same two approaches. Either a virtual authenticator inside the browser answers the ceremony, set up with the Chrome DevTools Protocol (CDP), or a script in the page replaces `navigator.credentials` with an authenticator of its own.
+
+| | Playwright | Vibium |
+|---|---|---|
+| **Folder** | `e2e/` | `e2e-vibium/` |
+| **Test runner** | Playwright Test | Node's test runner |
+| **Passkey support** | Built in | None: WebDriver BiDi, which Vibium is built on, has no WebAuthn commands |
+| **Virtual authenticator in the browser** | CDP session (`WebAuthn.*`) | The same CDP commands, sent through chromedriver |
+| **Authenticator replaced in the page** | `context.credentials` | A software authenticator written for this project |
+| **What the suite covers** | Guided demos of both approaches, tests for registration and login, and what the server must reject | Guided demos of both approaches |
+| **Run it** | `npm test` | `npm run test:vibium` |
+| **Read more** | [Playwright: CDP or `context.credentials`?](#playwright-cdp-or-contextcredentials) | [Vibium: CDP or a Software Authenticator?](#vibium-cdp-or-a-software-authenticator) |
 
 ## Contents
 
@@ -20,8 +33,8 @@ A minimal demo app that shows how to **test WebAuthn/Passkey flows with Playwrig
 - [What This Project Demonstrates](#what-this-project-demonstrates)
 - [Project Structure](#project-structure)
 - [The Guided Demos](#the-guided-demos)
-- [CDP or `context.credentials`?](#cdp-or-contextcredentials)
-- [The Same with Vibium](#the-same-with-vibium)
+- [Playwright: CDP or `context.credentials`?](#playwright-cdp-or-contextcredentials)
+- [Vibium: CDP or a Software Authenticator?](#vibium-cdp-or-a-software-authenticator)
 - [How CDP WebAuthn Works](#how-cdp-webauthn-works)
 - [Server API](#server-api)
 - [Browser Support](#browser-support)
@@ -307,15 +320,23 @@ Commit the generated files. CI and everyone else get the change through `npm run
 
 ## What This Project Demonstrates
 
+**The app**
+
 - Implementing WebAuthn registration and login with `@simplewebauthn`
-- Testing passkey flows in Playwright **without real hardware**
+
+**With Playwright**
+
 - Using CDP sessions to create virtual authenticators
 - Inspecting credentials, sign counts, and authenticator state via CDP
 - Configuring virtual authenticators (platform and USB), choosing which one answers, and simulating failed user verification
 - Seeding a known passkey with CDP (`WebAuthn.addCredential`) so a test can start at the login
 - Using `context.credentials` to register, seed and reuse passkeys without CDP
 - Testing what the server must reject (missing user verification, a foreign origin, a broken signature) by tampering with a ceremony between browser and server
-- Doing both with Vibium: CDP through WebDriver BiDi, and a software authenticator installed as an init script
+
+**With Vibium**
+
+- Reaching CDP although Vibium speaks WebDriver BiDi, to create, inspect and seed virtual authenticators and to simulate failed user verification
+- Replacing `navigator.credentials` with a software authenticator installed as an init script, and seeding a passkey into it
 
 | Component | Technology |
 |-----------|-----------|
@@ -400,9 +421,9 @@ The counterpart to the CDP demo, using Playwright's built-in API:
 
 ### `e2e-vibium/tests/`
 
-`passkey-cdp-demo.test.ts` (Route A) and `passkey-soft-authenticator-demo.test.ts` (Route B) repeat the central steps of the two files above with Vibium. See [The Same with Vibium](#the-same-with-vibium).
+`passkey-cdp-demo.test.ts` (Route A) and `passkey-soft-authenticator-demo.test.ts` (Route B) repeat the central steps of the two files above with Vibium. See [Vibium: CDP or a Software Authenticator?](#vibium-cdp-or-a-software-authenticator).
 
-## CDP or `context.credentials`?
+## Playwright: CDP or `context.credentials`?
 
 | | CDP (`WebAuthn.*`) | `context.credentials` |
 |---|---|---|
@@ -422,7 +443,7 @@ The counterpart to the CDP demo, using Playwright's built-in API:
 
 The [`Credentials` docs](https://playwright.dev/docs/api/class-credentials) say nothing about user verification or transports. Those two rows come from the source of Playwright 1.64, and Step 5a of the demo fails if the behaviour changes.
 
-## The Same with Vibium
+## Vibium: CDP or a Software Authenticator?
 
 [Vibium](https://github.com/VibiumDev/vibium) is built on WebDriver BiDi, which has no WebAuthn commands, so it has no passkey API. `e2e-vibium/` shows two ways to get one anyway. They mirror the two Playwright approaches above.
 
