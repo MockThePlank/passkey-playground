@@ -176,6 +176,28 @@ test.use({ authenticatorOptions: { transport: 'usb', isUserVerified: false } });
 
 Find elements by role, label or text, as the helpers do, not by id or CSS class.
 
+#### Testing What the Server Rejects
+
+The app is an honest client: it sends the server whatever the authenticator returns. A failed fingerprint check ends in the browser, and the server never hears of it. To test the server's own checks, the test has to be the client. `e2e/fixtures/ceremony.ts` runs a ceremony in steps, so the test can change the request or the response in between:
+
+```ts
+import { createRegistration, verify, withClientData } from '../fixtures/ceremony.js';
+
+test('rejects a response from another origin', async ({ page, authenticator }) => {
+  await page.goto('/');
+
+  const response = await createRegistration(page, uniqueName('origin'));
+  const forged = withClientData(response, { origin: 'https://evil.example' });
+
+  expect(await verify(page, 'register', forged)).toEqual({
+    status: 400,
+    body: { error: 'Verification failed' },
+  });
+});
+```
+
+`passkey-server-verification.spec.ts` uses this for missing user verification, a broken signature, a foreign origin, challenge or relying party, an unknown passkey, and a username that is claimed while a registration is under way.
+
 Every spec file runs in Chromium only, because the fixture needs CDP. For a test that should also run in WebKit, use `context.credentials` instead of the fixture, and add the file to `testMatch` of the `webkit` project in `e2e/playwright.config.ts`.
 
 ### Vibium
@@ -326,10 +348,12 @@ passkey-playground/
 │   ├── global-setup.ts           # Deletes the users a test run creates
 │   ├── fixtures/
 │   │   ├── webauthn.fixture.ts   # Reusable CDP authenticator fixture
-│   │   └── app.ts                # How the tests operate the app (register, login, ...)
+│   │   ├── app.ts                # How the tests operate the app (register, login, ...)
+│   │   └── ceremony.ts           # Runs a ceremony step by step, to tamper with it
 │   └── tests/
 │       ├── passkey-register.spec.ts           # Registration tests
 │       ├── passkey-login.spec.ts              # Login tests
+│       ├── passkey-server-verification.spec.ts # What the server must reject
 │       ├── passkey-cdp-demo.spec.ts           # 📖 Commented guide: CDP
 │       └── passkey-credentials-demo.spec.ts   # 📖 Commented guide: context.credentials
 │

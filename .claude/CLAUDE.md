@@ -62,6 +62,7 @@ This is an npm workspaces monorepo with four packages: `server`, `client`, `e2e`
 **E2E** (`e2e/`) — Playwright tests using CDP virtual authenticators and `context.credentials`
 - `fixtures/webauthn.fixture.ts` provides the `authenticator` fixture (configurable with `test.use({ authenticatorOptions })`) and a `createVirtualAuthenticator()` helper that sets up a CDP session with `WebAuthn.enable` and returns methods for credential inspection
 - `fixtures/app.ts` holds the helpers that operate the app (`registerViaUi`, `loginViaUi`, `logout`, `message`). Use them, and role/label locators, instead of ids or CSS classes
+- `fixtures/ceremony.ts` runs a ceremony in steps (`createRegistration`, `createAuthentication`, `verify`) so a test can tamper with the request or the response; `passkey-server-verification.spec.ts` uses it to test what the server must reject. A test that only drives the UI never reaches the server's checks for user verification, origin or challenge
 - `global-setup.ts` deletes the users a run created; it needs `DATABASE_URL` (read from the root `.env`)
 - Tests run with `workers: 1` (WebAuthn state is per browser context). CDP specs are Chromium-only; `passkey-credentials-demo.spec.ts` also runs in WebKit, except on Linux (and so not in CI), where Playwright's WebKit has no `window.PublicKeyCredential`
 - Playwright config auto-starts both server and client via `webServer`
