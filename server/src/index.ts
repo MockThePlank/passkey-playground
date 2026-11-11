@@ -1,10 +1,16 @@
 import './env.js';
+import { createHash } from 'node:crypto';
 import Fastify from 'fastify';
 import secureSession from '@fastify/secure-session';
 import { authRoutes } from './routes/auth.js';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || 'localhost';
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
+if (IS_PRODUCTION && !process.env.SESSION_SECRET) {
+  throw new Error('SESSION_SECRET must be set in production');
+}
 const SESSION_SECRET = process.env.SESSION_SECRET || 'dev-secret-change-in-production!';
 
 async function main() {
@@ -20,12 +26,13 @@ async function main() {
 
   // ─── Session Plugin ──────────────────────────────────────────────
   await fastify.register(secureSession, {
-    // Pad or truncate secret to exactly 32 bytes
-    key: Buffer.from(SESSION_SECRET.padEnd(32, '0').slice(0, 32)),
+    // The cookie cipher needs exactly 32 bytes; hashing gives that for a
+    // secret of any length without throwing part of it away
+    key: createHash('sha256').update(SESSION_SECRET).digest(),
     cookie: {
       path: '/',
       httpOnly: true,
-      secure: false, // Set to true in production with HTTPS
+      secure: IS_PRODUCTION, // Production runs behind HTTPS
       sameSite: 'lax',
       maxAge: 60 * 60 * 24, // 24 hours
     },

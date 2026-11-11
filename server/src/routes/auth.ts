@@ -13,6 +13,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { users, credentials } from '../db/schema.js';
 import { requireAuth } from '../lib/session.js';
+import { rememberChallenge, consumeChallenge } from '../lib/challenges.js';
 
 // ─── Config ──────────────────────────────────────────────────────────
 const rpID = process.env.RP_ID || 'localhost';
@@ -20,6 +21,35 @@ const rpName = process.env.RP_NAME || 'Passkey Playground';
 const rpOrigin = process.env.RP_ORIGIN || 'http://localhost:5173';
 const MAX_USERNAME_LENGTH = 255; // Matches users.username in the schema
 const USERNAME_TAKEN = 'Username is already taken';
+
+// The passkey is the only factor, so the authenticator must verify the user
+// (biometrics or PIN). The options ask for it and the verification insists
+// on it: the two have to agree.
+const USER_VERIFICATION = 'required' as const;
+
+// Shape check for both verify endpoints. @simplewebauthn validates the
+// contents; this only stops requests that are not a WebAuthn response at all.
+const verifySchema = {
+  body: {
+    type: 'object',
+    required: ['id', 'rawId', 'response', 'type'],
+    properties: {
+      id: { type: 'string', minLength: 1, maxLength: 512 },
+      rawId: { type: 'string', minLength: 1 },
+      response: { type: 'object' },
+      type: { const: 'public-key' },
+    },
+  },
+};
+
+/** Name of the violated unique constraint, or null for any other error. */
+function uniqueViolation(err: unknown): string | null {
+  // Drizzle wraps the driver error, so walk the cause chain
+  for (let e = err as any; e; e = e.cause) {
+    if (e.code === '23505') return e.constraint_name ?? '';
+  }
+  return null;
+}
 
 export async function authRoutes(fastify: FastifyInstance) {
   // ─── Registration: Generate Options ──────────────────────────────
@@ -74,11 +104,12 @@ export async function authRoutes(fastify: FastifyInstance) {
         })),
         authenticatorSelection: {
           residentKey: 'required',
-          userVerification: 'preferred',
+          userVerification: USER_VERIFICATION,
         },
       });
 
       // Store challenge in session for verification
+      rememberChallenge(options.challenge);
       request.session.set('challenge', options.challenge);
       // Kept apart from `username`, which names the signed-in user
       request.session.set('pendingUsername', username);
@@ -90,11 +121,20 @@ export async function authRoutes(fastify: FastifyInstance) {
   // ─── Registration: Verify Response ───────────────────────────────
   fastify.post<{ Body: RegistrationResponseJSON }>(
     '/register/verify',
+    { schema: verifySchema },
     async (request, reply) => {
       const expectedChallenge = request.session.get('challenge');
       const username = request.session.get('pendingUsername');
 
-      if (!expectedChallenge || !username) {
+      // One attempt per challenge, whether it succeeds or not
+      request.session.set('challenge', undefined);
+      request.session.set('pendingUsername', undefined);
+
+      if (
+        !expectedChallenge ||
+        !username ||
+        !consumeChallenge(expectedChallenge)
+      ) {
         return reply.code(400).send({ error: 'No pending registration' });
       }
 
@@ -104,6 +144,7 @@ export async function authRoutes(fastify: FastifyInstance) {
           expectedChallenge,
           expectedOrigin: rpOrigin,
           expectedRPID: rpID,
+          requireUserVerification: true,
         });
 
         if (!verification.verified || !verification.registrationInfo) {
@@ -111,42 +152,57 @@ export async function authRoutes(fastify: FastifyInstance) {
         }
 
         const { credential } = verification.registrationInfo;
+        const sessionUserId = request.session.get('userId');
 
-        // Create or find user
-        let user = await db.query.users.findFirst({
-          where: eq(users.username, username),
+        // User and passkey are stored together or not at all. A user row
+        // without a passkey would block its username for good.
+        const user = await db.transaction(async (tx) => {
+          let user = await tx.query.users.findFirst({
+            where: eq(users.username, username),
+          });
+
+          if (!user) {
+            [user] = await tx.insert(users).values({ username }).returning();
+          } else if (sessionUserId !== user.id) {
+            // Re-checked here: the name may have been claimed since the
+            // options were issued, or the session may be an older copy of
+            // the cookie
+            return null;
+          }
+
+          await tx.insert(credentials).values({
+            id: credential.id,
+            userId: user.id,
+            publicKey: Buffer.from(credential.publicKey),
+            counter: credential.counter,
+            transports: request.body.response.transports ?? [],
+          });
+
+          return user;
         });
 
         if (!user) {
-          const [newUser] = await db
-            .insert(users)
-            .values({ username })
-            .returning();
-          user = newUser;
-        } else if (request.session.get('userId') !== user.id) {
-          // Re-checked here: the name may have been claimed since the options
-          // were issued, or the session may be an older copy of the cookie
           return reply.code(409).send({ error: USERNAME_TAKEN });
         }
-
-        // Store credential
-        await db.insert(credentials).values({
-          id: credential.id,
-          userId: user.id,
-          publicKey: Buffer.from(credential.publicKey),
-          counter: credential.counter,
-          transports: request.body.response.transports ?? [],
-        });
 
         // Set session
         request.session.set('userId', user.id);
         request.session.set('username', username);
-        request.session.set('pendingUsername', undefined);
-        request.session.set('challenge', undefined);
 
         return reply.send({ verified: true, username });
       } catch (err) {
-        console.error('Registration verification error:', err);
+        // Two registrations can pass the checks above at the same moment;
+        // the database then lets only one of them through
+        const constraint = uniqueViolation(err);
+        if (constraint !== null) {
+          return reply.code(409).send({
+            error: constraint.includes('username')
+              ? USERNAME_TAKEN
+              : 'Passkey is already registered',
+          });
+        }
+
+        request.log.error(err, 'Registration verification error');
         return reply.code(400).send({ error: 'Verification failed' });
       }
     },
@@ -156,10 +212,11 @@ export async function authRoutes(fastify: FastifyInstance) {
   fastify.post('/login/options', async (request, reply) => {
     const options = await generateAuthenticationOptions({
       rpID,
-      userVerification: 'preferred',
+      userVerification: USER_VERIFICATION,
       // Empty allowCredentials = discoverable credential (passkey)
     });
 
+    rememberChallenge(options.challenge);
     request.session.set('challenge', options.challenge);
 
     return reply.send(options);
@@ -168,10 +225,14 @@ export async function authRoutes(fastify: FastifyInstance) {
   // ─── Login: Verify Response ──────────────────────────────────────
   fastify.post<{ Body: AuthenticationResponseJSON }>(
     '/login/verify',
+    { schema: verifySchema },
     async (request, reply) => {
       const expectedChallenge = request.session.get('challenge');
 
-      if (!expectedChallenge) {
+      // One attempt per challenge, whether it succeeds or not
+      request.session.set('challenge', undefined);
+
+      if (!expectedChallenge || !consumeChallenge(expectedChallenge)) {
         return reply.code(400).send({ error: 'No pending login' });
       }
 
@@ -190,6 +251,7 @@ export async function authRoutes(fastify: FastifyInstance) {
           expectedChallenge,
           expectedOrigin: rpOrigin,
           expectedRPID: rpID,
+          requireUserVerification: true,
           credential: {
             id: credential.id,
             publicKey: new Uint8Array(credential.publicKey),
@@ -221,11 +283,10 @@ export async function authRoutes(fastify: FastifyInstance) {
         // Set session
         request.session.set('userId', user.id);
         request.session.set('username', user.username);
-        request.session.set('challenge', undefined);
 
         return reply.send({ verified: true, username: user.username });
       } catch (err) {
-        console.error('Login verification error:', err);
+        request.log.error(err, 'Login verification error');
         return reply.code(400).send({ error: 'Verification failed' });
       }
     },

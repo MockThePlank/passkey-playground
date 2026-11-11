@@ -3,43 +3,25 @@ import {
   expect,
   createVirtualAuthenticator,
 } from '../fixtures/webauthn.fixture.js';
-import type { Page } from '@playwright/test';
-
-async function register(page: Page, username: string) {
-  await page.goto('/#/register');
-  await page.fill('#username', username);
-  await page.click('#register-btn');
-}
-
-function currentUser(page: Page) {
-  return page.evaluate(async () => {
-    const res = await fetch('/api/auth/me');
-    const body = (await res.json()) as { userId?: string; username?: string };
-    return { status: res.status, body };
-  });
-}
+import {
+  currentUser,
+  expectSignedInAs,
+  message,
+  registerViaUi,
+  submitRegistration,
+  uniqueName,
+} from '../fixtures/app.js';
 
 test.describe('Passkey Registration', () => {
   test('should register a new user with a passkey', async ({
     page,
     authenticator,
   }) => {
-    const username = `testuser-${Date.now()}`;
+    const username = uniqueName('testuser');
 
-    // Navigate to register page
-    await page.goto('/#/register');
-
-    // Fill in username
-    await page.fill('#username', username);
-
-    // Click register — the virtual authenticator will handle the ceremony
-    await page.click('#register-btn');
-
-    // Wait for redirect to dashboard
-    await page.waitForURL('**/dashboard');
-
-    // Verify we're on the dashboard and username is displayed
-    await expect(page.locator('.user-badge')).toContainText(username);
+    // The virtual authenticator handles the ceremony
+    await submitRegistration(page, username);
+    await expectSignedInAs(page, username);
 
     // Verify a credential was stored on the virtual authenticator
     const credentials = await authenticator.getCredentials();
@@ -52,12 +34,9 @@ test.describe('Passkey Registration', () => {
     await page.goto('/#/register');
 
     // Click register without entering a username
-    await page.click('#register-btn');
+    await page.getByRole('button', { name: 'Create Passkey' }).click();
 
-    // Should show error message
-    await expect(page.locator('#message')).toContainText(
-      'Please enter a username',
-    );
+    await expect(message(page)).toHaveText('Please enter a username.');
   });
 
   test.describe('existing usernames', () => {
@@ -65,48 +44,46 @@ test.describe('Passkey Registration', () => {
       browser,
       baseURL,
     }) => {
-      const username = `owner-${Date.now()}`;
+      const username = uniqueName('owner');
 
       const ownerContext = await browser.newContext({ baseURL });
-      const owner = await ownerContext.newPage();
-      await createVirtualAuthenticator(owner);
-      await register(owner, username);
-      await owner.waitForURL('**/dashboard');
-
       const otherContext = await browser.newContext({ baseURL });
-      const other = await otherContext.newPage();
-      const otherAuthenticator = await createVirtualAuthenticator(other);
 
-      // A padded name must not count as a different account
-      for (const attempt of [username, `  ${username}  `]) {
-        await register(other, attempt);
-        await expect(other.locator('#message')).toContainText(
-          'Username is already taken',
-        );
-        expect((await currentUser(other)).status).toBe(401);
+      try {
+        const owner = await ownerContext.newPage();
+        await createVirtualAuthenticator(owner);
+        await registerViaUi(owner, username);
+
+        const other = await otherContext.newPage();
+        const otherAuthenticator = await createVirtualAuthenticator(other);
+
+        // A padded name must not count as a different account
+        for (const attempt of [username, `  ${username}  `]) {
+          await submitRegistration(other, attempt);
+          await expect(message(other)).toHaveText('Username is already taken');
+          expect((await currentUser(other)).status).toBe(401);
+        }
+
+        // The ceremony never started, so no passkey was created
+        expect(await otherAuthenticator.getCredentials()).toHaveLength(0);
+      } finally {
+        await otherContext.close();
+        await ownerContext.close();
       }
-
-      // The ceremony never started, so no passkey was created
-      expect(await otherAuthenticator.getCredentials()).toHaveLength(0);
-
-      await otherContext.close();
-      await ownerContext.close();
     });
 
     test('should let the signed-in owner add another passkey', async ({
       page,
       authenticator,
     }) => {
-      const username = `multi-${Date.now()}`;
-      await register(page, username);
-      await page.waitForURL('**/dashboard');
+      const username = uniqueName('multi');
+      await registerViaUi(page, username);
       const before = await currentUser(page);
 
       // Without this, excludeCredentials rejects the same authenticator
       await authenticator.clearCredentials();
 
-      await register(page, username);
-      await page.waitForURL('**/dashboard');
+      await registerViaUi(page, username);
 
       expect(await authenticator.getCredentials()).toHaveLength(1);
       expect((await currentUser(page)).body.userId).toBe(before.body.userId);
@@ -114,11 +91,10 @@ test.describe('Passkey Registration', () => {
 
     test('should keep the signed-in identity during a pending registration', async ({
       page,
-      authenticator,
+      authenticator: _authenticator,
     }) => {
-      const username = `identity-${Date.now()}`;
-      await register(page, username);
-      await page.waitForURL('**/dashboard');
+      const username = uniqueName('identity');
+      await registerViaUi(page, username);
 
       await page.request.post('/api/auth/register/options', {
         data: { username: `${username}-other` },
@@ -128,12 +104,38 @@ test.describe('Passkey Registration', () => {
     });
   });
 
-  test('should reject invalid usernames', async ({ request }) => {
-    for (const username of [123, '   ', 'x'.repeat(256)]) {
-      const response = await request.post('/api/auth/register/options', {
-        data: { username },
+  test.describe('API', () => {
+    test('should reject invalid usernames', async ({ request }) => {
+      for (const username of [123, '   ', 'x'.repeat(256)]) {
+        const response = await request.post('/api/auth/register/options', {
+          data: { username },
+        });
+        expect(response.status()).toBe(400);
+      }
+    });
+
+    test('should reject a verification without a pending registration', async ({
+      request,
+    }) => {
+      const response = await request.post('/api/auth/register/verify', {
+        data: { id: 'abc', rawId: 'abc', type: 'public-key', response: {} },
       });
+
       expect(response.status()).toBe(400);
-    }
+      expect(await response.json()).toEqual({
+        error: 'No pending registration',
+      });
+    });
+
+    test('should reject a body that is not a WebAuthn response', async ({
+      request,
+    }) => {
+      for (const data of [{}, { id: 'abc' }, { id: 1, response: 'x' }]) {
+        const response = await request.post('/api/auth/register/verify', {
+          data,
+        });
+        expect(response.status()).toBe(400);
+      }
+    });
   });
 });

@@ -3,7 +3,7 @@ import {
   uuid,
   varchar,
   timestamp,
-  integer,
+  bigint,
   text,
   customType,
 } from 'drizzle-orm/pg-core';
@@ -33,8 +33,9 @@ export const credentials = pgTable('credentials', {
     .references(() => users.id, { onDelete: 'cascade' }),
   // COSE public key as binary
   publicKey: bytea('public_key').notNull(),
-  // Signature counter for replay protection
-  counter: integer('counter').notNull().default(0),
+  // Signature counter for replay protection. It is an unsigned 32-bit value,
+  // which does not fit a signed Postgres integer.
+  counter: bigint('counter', { mode: 'number' }).notNull().default(0),
   // Transports supported by this credential (e.g. 'internal', 'hybrid')
   transports: text('transports').array(),
   createdAt: timestamp('created_at', { withTimezone: true })

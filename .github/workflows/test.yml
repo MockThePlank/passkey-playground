@@ -1,0 +1,57 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: passkey
+          POSTGRES_PASSWORD: passkey
+          POSTGRES_DB: passkey_playground
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U passkey -d passkey_playground"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The defaults in .env.example match the service container above
+      - run: cp .env.example .env
+
+      - run: npm run typecheck
+
+      - run: npm run db:migrate
+
+      # Chromium only: the WebKit project does not run on Linux, see
+      # e2e/playwright.config.ts
+      - run: npx playwright install --with-deps chromium
+        working-directory: e2e
+
+      - run: npm test
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+          retention-days: 7

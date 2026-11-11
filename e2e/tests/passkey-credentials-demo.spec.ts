@@ -8,7 +8,16 @@
  * ╚══════════════════════════════════════════════════════════════════╝
  */
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+import {
+  expectSignedInAs,
+  loginViaUi,
+  logout,
+  message,
+  registerViaUi,
+  submitLogin,
+  uniqueName,
+} from '../fixtures/app.js';
 
 // =====================================================================
 //  BACKGROUND: How is this different from CDP?
@@ -31,30 +40,6 @@ import { test, expect, type Page } from '@playwright/test';
 // =====================================================================
 
 const RP_ID = 'localhost';
-
-function uniqueName(prefix: string) {
-  return `${prefix}-${Date.now()}`;
-}
-
-async function registerViaUi(page: Page, username: string) {
-  await page.goto('/#/register');
-  await page.fill('#username', username);
-  await page.click('#register-btn');
-  await page.waitForURL('**/dashboard');
-  await expect(page.locator('.user-badge')).toContainText(username);
-}
-
-async function logout(page: Page) {
-  await page.click('#logout-btn');
-  await page.waitForURL('**/login');
-}
-
-async function loginViaUi(page: Page, username: string) {
-  await page.goto('/#/login');
-  await page.click('#login-btn');
-  await page.waitForURL('**/dashboard');
-  await expect(page.locator('.user-badge')).toContainText(username);
-}
 
 test.describe('context.credentials Demo', () => {
 
@@ -114,9 +99,7 @@ test.describe('context.credentials Demo', () => {
     await registerViaUi(page, username);
     await logout(page);
 
-    await page.click('#login-btn');
-    await page.waitForURL('**/dashboard');
-    await expect(page.locator('.user-badge')).toContainText(username);
+    await loginViaUi(page, username);
 
     const [credential] = await context.credentials.get({ rpId: RP_ID });
     expect(credential.signCount).toBe(1);
@@ -145,11 +128,10 @@ test.describe('context.credentials Demo', () => {
     await context.credentials.create(RP_ID);
     await context.credentials.install();
 
-    await page.goto('/#/login');
-    await page.click('#login-btn');
+    await submitLogin(page);
 
-    await expect(page.locator('#message')).toHaveText('Credential not found');
-    expect(page.url()).toContain('#/login');
+    await expect(message(page)).toHaveText('Credential not found');
+    await expect(page).toHaveURL(/#\/login$/);
   });
 
   test('Step 3b: A captured passkey logs in from a new context', async ({
@@ -198,9 +180,8 @@ test.describe('context.credentials Demo', () => {
     await stale.credentials.create(atEnrollment.rpId, atEnrollment);
     await stale.credentials.install();
     const stalePage = await stale.newPage();
-    await stalePage.goto('/#/login');
-    await stalePage.click('#login-btn');
-    await expect(stalePage.locator('#message')).toHaveText(
+    await submitLogin(stalePage);
+    await expect(message(stalePage)).toHaveText(
       'Verification failed',
     );
     await stale.close();
@@ -259,7 +240,7 @@ test.describe('context.credentials Demo', () => {
 
     // The cookie alone is enough to be signed in straight away...
     await restoredPage.goto('/#/dashboard');
-    await expect(restoredPage.locator('.user-badge')).toContainText(username);
+    await expectSignedInAs(restoredPage, username);
 
     // ...and the passkey still works after signing out
     await logout(restoredPage);
@@ -353,13 +334,12 @@ test.describe('context.credentials Demo', () => {
   }) => {
     await context.credentials.install();
 
-    await page.goto('/#/login');
-    await page.click('#login-btn');
+    await submitLogin(page);
 
-    await expect(page.locator('#message')).toHaveText(
+    await expect(message(page)).toHaveText(
       'Authentication was cancelled.',
     );
-    expect(page.url()).toContain('#/login');
+    await expect(page).toHaveURL(/#\/login$/);
   });
 
 

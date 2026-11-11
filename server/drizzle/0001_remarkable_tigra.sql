@@ -1,0 +1,1 @@
+ALTER TABLE "credentials" ALTER COLUMN "counter" SET DATA TYPE bigint;

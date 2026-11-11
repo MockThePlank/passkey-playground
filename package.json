@@ -16,6 +16,7 @@
     "db:migrate": "npm run db:migrate -w server",
     "test": "npm run test -w e2e",
     "test:ui": "npm run test:ui -w e2e",
+    "typecheck": "npm run typecheck --workspaces",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down"
   },
