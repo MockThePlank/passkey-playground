@@ -57,7 +57,12 @@ jobs:
       # user namespaces it needs), so Chrome exits at launch. Playwright
       # runs its Chromium without the sandbox by default; this does the
       # same for Vibium.
-      - run: npm run test:vibium
+      #
+      # The log folder has to exist: chromedriver does not start when it
+      # cannot write its log.
+      - run: |
+          mkdir -p "$VIBIUM_CHROMEDRIVER_LOG_DIR"
+          npm run test:vibium
         env:
           VIBIUM_CHROME_ARGS: --no-sandbox
           VIBIUM_CHROMEDRIVER_LOG_DIR: ${{ runner.temp }}/chromedriver-logs
