@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "description": "Passkey (WebAuthn) demo app with Playwright and Vibium testing",
+  "license": "MIT",
   "workspaces": [
     "server",
     "client",
