@@ -39,6 +39,7 @@ Both suites show the same two approaches. Either a virtual authenticator inside 
 - [Server API](#server-api)
 - [Browser Support](#browser-support)
 - [Not Production-Ready](#not-production-ready)
+- [License](#license)
 
 ---
 
@@ -530,3 +531,7 @@ The server exists to give the tests something real to talk to. It verifies WebAu
 - **Challenges are tracked in memory.** Each challenge works once (`server/src/lib/challenges.ts`), but the list is lost on restart and not shared between several server instances.
 - **No rate limiting**, no account recovery, and no way to list or remove passkeys.
 - **Username enumeration**: registration tells you whether a name is taken.
+
+## License
+
+[MIT](LICENSE). You may copy the fixtures, helpers and tests into your own project; keep the copyright notice when you take substantial parts.
