@@ -41,8 +41,8 @@ import {
 //  real, so the server does its full job.
 //
 //  Unlike the CDP route this uses public Vibium API only, and nothing in
-//  it is specific to Chrome. Set VIBIUM_ENGINE=firefox to try it there;
-//  this project has only run it in Chrome.
+//  it is specific to Chrome. Set VIBIUM_ENGINE=firefox to run it
+//  there; it passes in Firefox 160.
 //
 //  installSoftAuthenticator() must be called before the context opens a
 //  page, like context.credentials.install() in Playwright.

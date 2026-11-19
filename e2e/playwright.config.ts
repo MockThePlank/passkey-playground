@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
 
 // Playwright's WebKit build for Linux has no window.PublicKeyCredential.
@@ -6,6 +8,17 @@ import { defineConfig, devices } from '@playwright/test';
 // "WebAuthn is not supported in this browser". So the WebKit project only
 // runs where the browser has WebAuthn: macOS and Windows.
 const webkitHasWebAuthn = process.platform !== 'linux';
+
+// The Firefox project uses the Firefox installed on the machine (channel
+// 'moz-firefox', driven over WebDriver BiDi), not a Playwright build. These
+// are the paths Playwright looks in for that channel. Without Firefox
+// there, the project is left out instead of failing.
+const firefoxPath = {
+  darwin: '/Applications/Firefox.app/Contents/MacOS/firefox',
+  linux: '/snap/bin/firefox',
+  win32: join(process.env.PROGRAMFILES ?? 'C:\\Program Files', 'Mozilla Firefox', 'firefox.exe'),
+}[process.platform as string];
+const firefoxInstalled = !!firefoxPath && existsSync(firefoxPath);
 
 export default defineConfig({
   testDir: './tests',
@@ -43,8 +56,18 @@ export default defineConfig({
           },
         ]
       : []),
-    // No Firefox project yet: it has not been possible to run it here.
-    // See "Important Notes" in the README.
+    ...(firefoxInstalled
+      ? [
+          {
+            name: 'firefox',
+            testMatch: /passkey-credentials-demo\.spec\.ts$/,
+            use: {
+              ...devices['Desktop Firefox'],
+              channel: 'moz-firefox',
+            },
+          },
+        ]
+      : []),
   ],
 
   // Start both server and client before tests
