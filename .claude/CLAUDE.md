@@ -17,7 +17,7 @@ npm run db:generate
 # Start both server (port 3000) and client (port 5173)
 npm run dev
 
-# Run all Playwright tests (sequential; the context.credentials demo also runs in WebKit)
+# Run all Playwright tests (sequential; the context.credentials demo also runs in WebKit and, if installed, Firefox)
 npm test
 
 # Run tests with Playwright UI mode
@@ -64,7 +64,7 @@ This is an npm workspaces monorepo with four packages: `server`, `client`, `e2e`
 - `fixtures/app.ts` holds the helpers that operate the app (`registerViaUi`, `loginViaUi`, `logout`, `message`). Use them, and role/label locators, instead of ids or CSS classes
 - `fixtures/ceremony.ts` runs a ceremony in steps (`createRegistration`, `createAuthentication`, `verify`) so a test can tamper with the request or the response; `passkey-server-verification.spec.ts` uses it to test what the server must reject. A test that only drives the UI never reaches the server's checks for user verification, origin or challenge
 - `global-setup.ts` deletes the users a run created; it needs `DATABASE_URL` (read from the root `.env`)
-- Tests run with `workers: 1` (WebAuthn state is per browser context). CDP specs are Chromium-only; `passkey-credentials-demo.spec.ts` also runs in WebKit, except on Linux (and so not in CI), where Playwright's WebKit has no `window.PublicKeyCredential`
+- Tests run with `workers: 1` (WebAuthn state is per browser context). CDP specs are Chromium-only; `passkey-credentials-demo.spec.ts` also runs in WebKit, except on Linux (and so not in CI), where Playwright's WebKit has no `window.PublicKeyCredential`, and in the installed Firefox (`channel: 'moz-firefox'`), if there is one
 - Playwright config auto-starts both server and client via `webServer`
 - `passkey-cdp-demo.spec.ts` and `passkey-credentials-demo.spec.ts` are commented learning guides, not just test files
 

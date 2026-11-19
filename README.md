@@ -92,7 +92,7 @@ Use `localhost`, not `127.0.0.1`: the passkeys are bound to the name in `RP_ID`.
 # Install the browsers (first time only)
 npx playwright install chromium webkit
 
-# Run all tests
+# Run all tests (Firefox too, if it is installed; see Browser Support)
 npm test
 
 # Run with UI mode (great for debugging)
@@ -212,7 +212,7 @@ test('rejects a response from another origin', async ({ page, authenticator }) =
 
 `passkey-server-verification.spec.ts` uses this for missing user verification, a broken signature, a foreign origin, challenge or relying party, an unknown passkey, and a username that is claimed while a registration is under way.
 
-A spec that uses the fixture runs in Chromium only, because the fixture needs CDP. For a test that should also run in WebKit, use `context.credentials` instead of the fixture, and add the file to `testMatch` of the `webkit` project in `e2e/playwright.config.ts`.
+A spec that uses the fixture runs in Chromium only, because the fixture needs CDP. For a test that should also run in WebKit and Firefox, use `context.credentials` instead of the fixture, and add the file to `testMatch` of the `webkit` and `firefox` projects in `e2e/playwright.config.ts`.
 
 ### Vibium
 
@@ -428,7 +428,7 @@ The counterpart to the CDP demo, using Playwright's built-in API:
 
 | | CDP (`WebAuthn.*`) | `context.credentials` |
 |---|---|---|
-| **Browsers** | Chromium only | All browsers according to the [release notes](https://playwright.dev/docs/release-notes); tested here in Chromium and WebKit (WebKit not on Linux, see [Browser Support](#browser-support)) |
+| **Browsers** | Chromium only | All browsers according to the [release notes](https://playwright.dev/docs/release-notes); tested here in Chromium, WebKit and Firefox (WebKit not on Linux, Firefox only where it is installed, see [Browser Support](#browser-support)) |
 | **How it works** | Virtual authenticator inside the browser, so its WebAuthn stack runs | Script replaces `navigator.credentials.create()` and `.get()`; keys live in the Playwright process |
 | **Setup** | CDP session, `WebAuthn.enable`, `addVirtualAuthenticator` | `context.credentials.install()` |
 | **User verification** | Configurable, including failure (`isUserVerified: false`) | Always succeeds |
@@ -452,7 +452,7 @@ The [`Credentials` docs](https://playwright.dev/docs/api/class-credentials) say 
 |---|---|---|
 | **Playwright counterpart** | CDP (`WebAuthn.*`) | `context.credentials` |
 | **How it works** | chromedriver's `goog:cdp.sendCommand` carries CDP commands over BiDi, and Vibium passes them on. The browser's WebAuthn stack runs | `context.addInitScript()` replaces `navigator.credentials.create()` and `.get()` with an authenticator written in JavaScript; real ES256 keys from WebCrypto |
-| **Browsers** | Chrome only | Not tied to an engine; run here in Chrome only (`VIBIUM_ENGINE=firefox` to try Firefox) |
+| **Browsers** | Chrome only | Not tied to an engine; runs in Chrome by default and passes in Firefox 160 with `VIBIUM_ENGINE=firefox` |
 | **Vibium API used** | `browser.client`, which the typings mark as private | Public API only |
 | **User verification** | Configurable, including failure | Always succeeds |
 | **Seeding passkeys** | `WebAuthn.addCredential` | Second argument of `installSoftAuthenticator()` |
@@ -519,7 +519,7 @@ A challenge works once. Each `verify` call uses it up whether or not the verific
 
 - **CDP is Chromium only**: CDP WebAuthn is not available in Firefox or WebKit, so those specs run in Chromium only. `context.credentials` has no such limit.
 - **WebKit runs on macOS and Windows only**: Playwright's WebKit build for Linux has no `window.PublicKeyCredential`. `context.credentials` still replaces `navigator.credentials` there (Step 5a, which calls it directly, passes), but `@simplewebauthn/browser` checks for that global first and reports "WebAuthn is not supported in this browser". The WebKit project is therefore left out on Linux, which includes CI.
-- **Firefox is untested**: there is no Firefox project. On the machine this was developed on (macOS 27), Playwright's Firefox 157 build exits during startup with `Could not find profile folder`, also when started without Playwright. Whether the demo passes in Firefox is therefore unknown.
+- **Firefox uses the installed browser**: the `firefox` project runs the `context.credentials` demo in the Firefox installed on the machine (`channel: 'moz-firefox'`, driven over WebDriver BiDi), not in a Playwright build, so `npx playwright install` does not fetch it. All steps pass in Firefox 160 on macOS. Playwright looks for Firefox in `/Applications/Firefox.app` (macOS), `/snap/bin/firefox` (Linux) and `Program Files\Mozilla Firefox` (Windows); where it is not found, the project is left out. CI installs no Firefox, so it does not run there.
 - **`localhost`**: WebAuthn requires a secure context. `localhost` is treated as secure.
 - **One worker**: the tests run sequentially (`workers: 1`, set in `e2e/playwright.config.ts`).
 
